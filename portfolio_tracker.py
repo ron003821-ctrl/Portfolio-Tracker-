@@ -3,14 +3,36 @@ from supabase import create_client
 import yfinance as yf
 import pandas as pd
 import plotly.express as px
+import plotly.graph_objects as go
 from datetime import datetime, timedelta, time, date
+
+st.set_page_config(page_title="Portfolio Tracker", page_icon="", layout="wide")
 
 # -------------------------
 # Styling
 # -------------------------
 st.markdown("""
 <style>
-    @import url('https://fonts.googleapis.com/css2?family=Ropa+Sans&family=Inter:wght@300;400;500;600;700&display=swap');
+    @import url('https://fonts.googleapis.com/css2?family=Ropa+Sans&family=Inter:wght@300;400;500;600;700&family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@20..48,100..700,0..1,-50..200&display=swap');
+
+    .material-symbols-outlined {
+        font-family: 'Material Symbols Outlined';
+        font-weight: normal;
+        font-style: normal;
+        font-size: 18px;
+        line-height: 1;
+        letter-spacing: normal;
+        text-transform: none;
+        display: inline-block;
+        white-space: nowrap;
+        word-wrap: normal;
+        direction: ltr;
+        -webkit-font-feature-settings: 'liga';
+        -webkit-font-smoothing: antialiased;
+        vertical-align: middle;
+        color: #c9a84c;
+        margin-right: 0.35rem;
+    }
 
     /* ═══════════════════════════════════════════
        BRAND TOKENS
@@ -471,7 +493,6 @@ if not st.session_state.logged_in:
 # -------------------------
 # App title
 # -------------------------
-st.title("Portfolio Tracker")
 
 # -------------------------
 # Session State
@@ -980,9 +1001,10 @@ st.markdown(f"""
 <div style='height:3px; background:linear-gradient(90deg,#c9a84c 0%,rgba(201,168,76,0.15) 60%,transparent 100%);'></div>
 """, unsafe_allow_html=True)
 
-col_refresh_btn = st.columns([8, 1])[1]
-with col_refresh_btn:
-    if st.button("Refresh", use_container_width=True):
+st.markdown("<div style='height:0.5rem;'></div>", unsafe_allow_html=True)
+_rcol1, _rcol2 = st.columns([9, 1])
+with _rcol2:
+    if st.button("Refresh"):
         st.cache_data.clear()
         st.rerun()
 
@@ -991,17 +1013,17 @@ with col_refresh_btn:
 # -------------------------
 tab_overview, tab_history, tab_cashflow, tab_allocation, tab_charts = st.tabs([
     "Overview",
-    "Portfolio History",
+    "History",
     "Cashflow",
     "Allocation",
-    "Price Charts"
+    "Charts"
 ])
 
 # -------------------------
 # Tab: Cashflow
 # -------------------------
 with tab_cashflow:
-    st.header("Cashflow")
+    st.markdown("<h2><span class='material-symbols-outlined' style='font-size:20px;'>account_balance_wallet</span> Cashflow</h2>", unsafe_allow_html=True)
 
     if not st.session_state.cashflow.empty:
         income_df = st.session_state.cashflow[st.session_state.cashflow["Amount"] > 0].sort_values(by="Amount", ascending=False)
@@ -1010,8 +1032,6 @@ with tab_cashflow:
         total_income = income_df["Amount"].sum()
         total_expenses = expense_df["Amount"].sum()
         net_cashflow = total_income + total_expenses
-        net_color = "green" if net_cashflow >= 0 else "red"
-
         _net_col = "#27ae7a" if net_cashflow >= 0 else "#c94c4c"
         st.markdown(f"""
         <div style='display:flex; gap:1.5rem; flex-wrap:wrap; margin-bottom:1.5rem;'>
@@ -1042,7 +1062,7 @@ with tab_cashflow:
                     .style.format({"Amount": "€{:.2f}"})
                     .set_properties(**{"text-align": "left"})
                     .set_table_styles(
-                        [{"selector": "thead th", "props": [("background-color", "#e6ffe6")]}]
+                        [{"selector": "thead th", "props": [("background-color", "#0c1120"), ("color", "#a8a49a"), ("border-bottom", "1px solid #192138")]}]
                     ),
                     use_container_width=True
                 )
@@ -1059,7 +1079,7 @@ with tab_cashflow:
                     .style.format({"Amount": "€{:.2f}"})
                     .set_properties(**{"text-align": "left"})
                     .set_table_styles(
-                        [{"selector": "thead th", "props": [("background-color", "#ffe6e6")]}]
+                        [{"selector": "thead th", "props": [("background-color", "#0c1120"), ("color", "#a8a49a"), ("border-bottom", "1px solid #192138")]}]
                     ),
                     use_container_width=True
                 )
@@ -1073,14 +1093,16 @@ with tab_cashflow:
 # Tab: Historical Portfolio Value
 # -------------------------
 with tab_history:
-    st.header("Portfolio History")
-    st.markdown(
-        """
-        This chart logs the **total portfolio value** once per day (assets + broker cash + bank balances).
-        It also compares it to a **'No Investment'** baseline — what your wealth would be
-        if you had kept your initial money in cash instead of buying assets.
-        """
-    )
+    _hist_h1, _hist_h2 = st.columns([6, 1])
+    with _hist_h1:
+        st.markdown("<h2 style='margin-bottom:0.5rem;'><span class='material-symbols-outlined' style='font-size:20px;'>trending_up</span> Portfolio History</h2>", unsafe_allow_html=True)
+    with _hist_h2:
+        with st.expander("Info"):
+            st.markdown(
+                "Logs **total portfolio value** daily (assets + broker cash + bank balances). "
+                "Compares to a **No Investment** baseline — what your wealth would be if you kept everything in cash.",
+                unsafe_allow_html=True
+            )
 
     portfolio_df_current, _, _, _, _ = compute_portfolio()
     assets_total = portfolio_df_current["Value"].sum() if not portfolio_df_current.empty else 0.0
@@ -1131,17 +1153,22 @@ with tab_history:
                         font=dict(family="Inter", color="#a8a49a", size=11), bgcolor="rgba(0,0,0,0)", borderwidth=0),
         )
 
-        fig_total = px.line(
-            plot_df,
-            x="Date",
-            y=["Total Portfolio Value (€)", "No Investment (€)"],
-            labels={"Date": "", "value": "Value (€)", "variable": ""},
-            color_discrete_sequence=["#c9a84c", "#a8a49a"],
-        )
-        fig_total.update_traces(mode="lines", line=dict(width=2))
-        fig_total.update_traces(selector=dict(name="Total Portfolio Value (€)"), line=dict(width=2.5))
+        fig_total = go.Figure()
+        fig_total.add_trace(go.Scatter(
+            x=plot_df["Date"], y=plot_df["Total Portfolio Value (€)"],
+            mode="lines", name="Portfolio Value",
+            line=dict(color="#c9a84c", width=2.5),
+            hovertemplate="€%{y:,.2f}<extra></extra>"
+        ))
+        fig_total.add_trace(go.Scatter(
+            x=plot_df["Date"], y=plot_df["No Investment (€)"],
+            mode="lines", name="No Investment",
+            line=dict(color="#a8a49a", width=2, dash="dot"),
+            hovertemplate="€%{y:,.2f}<extra></extra>"
+        ))
         fig_total.update_layout(
             title=dict(text="Portfolio Value vs. No Investment", font=dict(family="Ropa Sans", color="#f0ece0", size=15), x=0),
+            yaxis_title="Value (€)",
             **_CHART_LAYOUT
         )
         st.plotly_chart(fig_total, use_container_width=True)
@@ -1164,7 +1191,7 @@ with tab_history:
         )
 
     st.markdown("---")
-    st.subheader("Compare With Bank Savings")
+    st.markdown("<h3 style='margin-bottom:0.5rem;'><span class='material-symbols-outlined' style='font-size:16px; color:#5c5a54;'>savings</span> Compare With Bank Savings</h3>", unsafe_allow_html=True)
 
     bank_interest_rate = st.number_input(
         "Annual Interest Rate (%)",
@@ -1201,7 +1228,7 @@ with tab_history:
 # Tab: Portfolio Overview
 # -------------------------
 with tab_overview:
-    st.header("Portfolio Overview")
+    st.markdown("<h2><span class='material-symbols-outlined' style='font-size:20px;'>dashboard</span> Portfolio Overview</h2>", unsafe_allow_html=True)
 
     portfolio_df, realized, unrealized, total_profit, profit_percentage = compute_portfolio()
 
@@ -1260,7 +1287,7 @@ with tab_overview:
     else:
         st.warning("Portfolio is empty. Add transactions to view portfolio details.")
 
-    st.header("All Transactions")
+    st.markdown("<h2 style='margin-top:1.5rem;'><span class='material-symbols-outlined' style='font-size:20px;'>receipt_long</span> All Transactions</h2>", unsafe_allow_html=True)
     if not st.session_state.transactions.empty:
         st.dataframe(st.session_state.transactions[TRANS_DISPLAY_COLS].style.format({
             'Quantity': '{:.8f}',
@@ -1275,8 +1302,8 @@ with tab_overview:
 # Tab: Asset Allocation
 # -------------------------
 with tab_allocation:
-    st.header("Asset Allocation")
-    custom_colors = ['#c9a84c', '#a8a49a', '#27ae7a', '#d4b86a', '#c94c4c', '#7a9fc4']
+    st.markdown("<h2><span class='material-symbols-outlined' style='font-size:20px;'>donut_large</span> Asset Allocation</h2>", unsafe_allow_html=True)
+    custom_colors = ['#c9a84c', '#27ae7a', '#7a9fc4', '#d4b86a', '#c94c4c', '#a8a49a']
 
     allocation_rows = []
 
@@ -1328,49 +1355,69 @@ with tab_allocation:
         col1, col2 = st.columns([2.2, 1])
 
         with col1:
-            fig = px.pie(
-                alloc_df,
-                values="Value",
-                names="Asset",
-                title="Asset Allocation (Including Cash & Banks)",
-                color_discrete_sequence=custom_colors
-            )
-            fig.update_traces(textposition="inside", textinfo="percent+label", hovertemplate="%{label}: €%{value:,.2f} (%{percent})")
+            fig = go.Figure(data=[go.Pie(
+                labels=alloc_df["Asset"],
+                values=alloc_df["Value"],
+                hole=0.55,
+                marker=dict(colors=custom_colors, line=dict(color="#080c18", width=2)),
+                textposition="outside",
+                textinfo="label+percent",
+                textfont=dict(family="Inter", size=11, color="#a8a49a"),
+                hovertemplate="%{label}<br>€%{value:,.2f}<br>%{percent}<extra></extra>",
+                pull=[0.02] * len(alloc_df),
+            )])
             fig.update_layout(
-                showlegend=True,
-                legend=dict(orientation="h", yanchor="top", y=-0.16, xanchor="center", x=0.5,
-                            font=dict(family="Inter", color="#a8a49a", size=11), bgcolor="rgba(0,0,0,0)"),
-                margin=dict(l=10, r=10, t=40, b=90),
+                showlegend=False,
+                margin=dict(l=20, r=20, t=40, b=20),
                 font=dict(family="Inter", size=12, color="#5c5a54"),
                 paper_bgcolor="#080c18",
                 plot_bgcolor="#080c18",
-                title=dict(text="Asset Allocation", font=dict(family="Ropa Sans", color="#f0ece0", size=15), x=0),
-                width=None,
-                height=520
+                title=dict(text="", font=dict(family="Ropa Sans", color="#f0ece0", size=15), x=0),
+                height=480,
+                annotations=[dict(
+                    text=f"<b>€{total_value:,.0f}</b><br><span style='font-size:10px;color:#5c5a54;'>NET WORTH</span>",
+                    x=0.5, y=0.5, font=dict(family="Ropa Sans", size=22, color="#f0ece0"),
+                    showarrow=False, align="center"
+                )]
             )
             st.plotly_chart(fig, use_container_width=True)
 
         with col2:
             st.markdown(
                 f"""
-                <div style="height:520px; display:flex; align-items:center; justify-content:center;">
+                <div style="height:480px; display:flex; align-items:center; justify-content:center;">
                     <div style="width:100%; padding-left:12px;">
-                        <div style="font-family:Inter; font-size:0.6rem; text-transform:uppercase; letter-spacing:0.14em; color:#5c5a54; font-weight:600; margin-bottom:1.2rem;">Breakdown</div>
+                        <div style="font-family:Inter; font-size:0.6rem; text-transform:uppercase; letter-spacing:0.14em; color:#5c5a54; font-weight:600; margin-bottom:1.2rem;">Category Breakdown</div>
                         <div style="font-family:Inter; font-size:0.85rem; line-height:1;">
                             <div style="display:flex; justify-content:space-between; align-items:center; border-bottom:1px solid #192138; padding:0.65rem 0;">
-                                <span style="color:#a8a49a;">Crypto</span>
-                                <span style="font-family:'Ropa Sans'; font-size:1rem; color:#f0ece0;">{pct_crypto:.1f}%</span>
+                                <span style="color:#a8a49a; display:flex; align-items:center; gap:0.5rem;">
+                                    <span style="width:8px; height:8px; border-radius:2px; background:#c9a84c; display:inline-block;"></span>Crypto
+                                </span>
+                                <div style="text-align:right;">
+                                    <div style="font-family:'Ropa Sans'; font-size:1rem; color:#f0ece0;">{pct_crypto:.1f}%</div>
+                                    <div style="font-family:Inter; font-size:0.65rem; color:#5c5a54;">€{crypto_value:,.0f}</div>
+                                </div>
                             </div>
                             <div style="display:flex; justify-content:space-between; align-items:center; border-bottom:1px solid #192138; padding:0.65rem 0;">
-                                <span style="color:#a8a49a;">Stocks / ETF</span>
-                                <span style="font-family:'Ropa Sans'; font-size:1rem; color:#f0ece0;">{pct_stocks:.1f}%</span>
+                                <span style="color:#a8a49a; display:flex; align-items:center; gap:0.5rem;">
+                                    <span style="width:8px; height:8px; border-radius:2px; background:#27ae7a; display:inline-block;"></span>Stocks / ETF
+                                </span>
+                                <div style="text-align:right;">
+                                    <div style="font-family:'Ropa Sans'; font-size:1rem; color:#f0ece0;">{pct_stocks:.1f}%</div>
+                                    <div style="font-family:Inter; font-size:0.65rem; color:#5c5a54;">€{stock_value:,.0f}</div>
+                                </div>
                             </div>
                             <div style="display:flex; justify-content:space-between; align-items:center; padding:0.65rem 0;">
-                                <span style="color:#a8a49a;">Cash & Banks</span>
-                                <span style="font-family:'Ropa Sans'; font-size:1rem; color:#f0ece0;">{pct_cash:.1f}%</span>
+                                <span style="color:#a8a49a; display:flex; align-items:center; gap:0.5rem;">
+                                    <span style="width:8px; height:8px; border-radius:2px; background:#7a9fc4; display:inline-block;"></span>Cash & Banks
+                                </span>
+                                <div style="text-align:right;">
+                                    <div style="font-family:'Ropa Sans'; font-size:1rem; color:#f0ece0;">{pct_cash:.1f}%</div>
+                                    <div style="font-family:Inter; font-size:0.65rem; color:#5c5a54;">€{cash_value:,.0f}</div>
+                                </div>
                             </div>
                         </div>
-                        <div style="margin-top:1rem; padding-top:0.8rem; border-top:1px solid #c9a84c; border-top-width:1px;">
+                        <div style="margin-top:1.2rem; padding-top:0.8rem; border-top:1px solid rgba(201,168,76,0.3);">
                             <div style="font-family:Inter; font-size:0.6rem; text-transform:uppercase; letter-spacing:0.14em; color:#5c5a54; margin-bottom:0.3rem;">Total Net Worth</div>
                             <div style="font-family:'Ropa Sans'; font-size:1.5rem; color:#c9a84c; letter-spacing:0.03em;">€{total_value:,.2f}</div>
                         </div>
@@ -1384,7 +1431,7 @@ with tab_allocation:
 # Tab: Historical Price Charts
 # -------------------------
 with tab_charts:
-    st.header("Historical Price Charts")
+    st.markdown("<h2><span class='material-symbols-outlined' style='font-size:20px;'>candlestick_chart</span> Price Charts</h2>", unsafe_allow_html=True)
     if not portfolio_df.empty:
         selected_ticker = st.selectbox("Select a Ticker for Historical Chart", options=portfolio_df['Ticker'].tolist(), key="hist_ticker")
         period = st.selectbox("Time Period", options=['6mo', '1y', '2y', '5y', 'max'], key="hist_period")

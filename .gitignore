@@ -2,3 +2,9 @@
 __pycache__/
 *.pyc
 .env
+balances.json
+balances_history.json
+portfolio_value_history.json
+transactions.csv
+cashflow.csv
+backup.txt
