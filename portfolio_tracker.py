@@ -974,7 +974,7 @@ _total_value = _total_assets + _cash + _credit + _cic
 _profit_color = "#27ae7a" if total_profit >= 0 else "#c94c4c"
 _profit_sign  = "+" if total_profit >= 0 else ""
 _pct_sign     = "+" if profit_percentage >= 0 else ""
-_today_str    = datetime.today().strftime("%d %b %Y").upper()
+_today_str    = date.today().strftime("%d %b %Y").upper()
 
 st.markdown(f"""
 <div style='background:#0c1120; border-bottom:1px solid #192138; padding:1.4rem 1.5rem 1.2rem; margin:-0 -1.5rem 0; display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:1rem;'>
@@ -1002,9 +1002,9 @@ st.markdown(f"""
 """, unsafe_allow_html=True)
 
 st.markdown("<div style='height:0.5rem;'></div>", unsafe_allow_html=True)
-_rcol1, _rcol2 = st.columns([9, 1])
+_rcol1, _rcol2 = st.columns([6, 1])
 with _rcol2:
-    if st.button("Refresh"):
+    if st.button("Refresh", use_container_width=True):
         st.cache_data.clear()
         st.rerun()
 
@@ -1093,15 +1093,14 @@ with tab_cashflow:
 # Tab: Historical Portfolio Value
 # -------------------------
 with tab_history:
-    _hist_h1, _hist_h2 = st.columns([6, 1])
+    _hist_h1, _hist_h2 = st.columns([4, 2])
     with _hist_h1:
         st.markdown("<h2 style='margin-bottom:0.5rem;'><span class='material-symbols-outlined' style='font-size:20px;'>trending_up</span> Portfolio History</h2>", unsafe_allow_html=True)
     with _hist_h2:
         with st.expander("Info"):
             st.markdown(
                 "Logs **total portfolio value** daily (assets + broker cash + bank balances). "
-                "Compares to a **No Investment** baseline — what your wealth would be if you kept everything in cash.",
-                unsafe_allow_html=True
+                "Compares to a **No Investment** baseline — what your wealth would be if you kept everything in cash."
             )
 
     portfolio_df_current, _, _, _, _ = compute_portfolio()
@@ -1146,10 +1145,10 @@ with tab_history:
             font=dict(family="Inter", color="#5c5a54", size=11),
             xaxis=dict(gridcolor="#192138", linecolor="#192138", tickfont=dict(color="#5c5a54"), zeroline=False),
             yaxis=dict(gridcolor="#192138", linecolor="#192138", tickfont=dict(color="#5c5a54"), zeroline=False),
-            margin=dict(l=10, r=10, t=50, b=10),
+            margin=dict(l=10, r=10, t=80, b=10),
             hovermode="x unified",
             hoverlabel=dict(bgcolor="#0c1120", bordercolor="#192138", font=dict(family="Inter", color="#f0ece0", size=12)),
-            legend=dict(orientation="h", yanchor="bottom", y=1.04, xanchor="left", x=0,
+            legend=dict(orientation="h", yanchor="bottom", y=1.06, xanchor="left", x=0,
                         font=dict(family="Inter", color="#a8a49a", size=11), bgcolor="rgba(0,0,0,0)", borderwidth=0),
         )
 
