@@ -1094,15 +1094,14 @@ with tab_cashflow:
 # Tab: Historical Portfolio Value
 # -------------------------
 with tab_history:
-    _hist_h1, _hist_h2 = st.columns([4, 2])
-    with _hist_h1:
-        st.markdown("<h2 style='margin-bottom:0.5rem;'><span class='material-symbols-outlined' style='font-size:20px;'>trending_up</span> Portfolio History</h2>", unsafe_allow_html=True)
-    with _hist_h2:
-        with st.expander("Info"):
-            st.markdown(
-                "Logs **total portfolio value** daily (assets + broker cash + bank balances). "
-                "Compares to a **No Investment** baseline — what your wealth would be if you kept everything in cash."
-            )
+    st.markdown(
+        "<h2 style='margin-bottom:0.5rem;'>"
+        "<span class='material-symbols-outlined' style='font-size:20px;'>trending_up</span> Portfolio History"
+        "&nbsp;<span class='material-symbols-outlined' style='font-size:15px; color:#5c5a54; cursor:help; vertical-align:middle;' "
+        "title='Logs total portfolio value daily (assets + broker cash + bank balances). Compares to a No Investment baseline — what your wealth would be if you kept everything in cash.'>help</span>"
+        "</h2>",
+        unsafe_allow_html=True
+    )
 
     portfolio_df_current, _, _, _, _ = compute_portfolio()
     assets_total = portfolio_df_current["Value"].sum() if not portfolio_df_current.empty else 0.0
@@ -1146,7 +1145,7 @@ with tab_history:
             font=dict(family="Inter", color="#5c5a54", size=11),
             xaxis=dict(gridcolor="#192138", linecolor="#192138", tickfont=dict(color="#5c5a54"), zeroline=False),
             yaxis=dict(gridcolor="#192138", linecolor="#192138", tickfont=dict(color="#5c5a54"), zeroline=False),
-            margin=dict(l=10, r=10, t=80, b=10),
+            margin=dict(l=10, r=10, t=100, b=10),
             hovermode="x unified",
             hoverlabel=dict(bgcolor="#0c1120", bordercolor="#192138", font=dict(family="Inter", color="#f0ece0", size=12)),
             legend=dict(orientation="h", yanchor="bottom", y=1.06, xanchor="left", x=0,
