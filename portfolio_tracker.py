@@ -14,175 +14,220 @@ st.markdown("""
 
     html, body, .stApp, .main {
         font-family: 'Inter', sans-serif !important;
-        background-color: #0d1117 !important;
-        color: #e6edf3 !important;
+        background-color: #0b0f19 !important;
+        color: #e2e8f0 !important;
     }
 
+    .main .block-container {
+        padding-top: 1.5rem !important;
+        padding-left: 1.5rem !important;
+        padding-right: 1.5rem !important;
+        max-width: 1200px !important;
+    }
+
+    /* ── Typography ── */
     h1 {
-        color: #e6edf3 !important;
-        font-weight: 600 !important;
-        font-size: 1.6rem !important;
-        letter-spacing: -0.02em !important;
-        border-bottom: 1px solid #21262d !important;
-        padding-bottom: 0.75rem !important;
-        margin-bottom: 1.5rem !important;
+        color: #f1f5f9 !important;
+        font-weight: 700 !important;
+        font-size: 1.5rem !important;
+        letter-spacing: -0.03em !important;
+        margin-bottom: 0.25rem !important;
+        border: none !important;
     }
 
     h2 {
-        color: #e6edf3 !important;
+        color: #f1f5f9 !important;
         font-weight: 600 !important;
-        font-size: 1.25rem !important;
+        font-size: 1.15rem !important;
         letter-spacing: -0.01em !important;
         -webkit-text-fill-color: unset !important;
         background: none !important;
+        margin-bottom: 1rem !important;
     }
 
     h3 {
-        color: #8b949e !important;
+        color: #94a3b8 !important;
         font-weight: 500 !important;
-        font-size: 1rem !important;
-    }
-
-    [data-testid="stSidebar"] {
-        background-color: #161b22 !important;
-        border-right: 1px solid #21262d !important;
-    }
-
-    .stButton > button {
-        background-color: #21262d !important;
-        color: #e6edf3 !important;
-        border: 1px solid #30363d !important;
-        border-radius: 6px !important;
-        font-weight: 500 !important;
-        font-size: 0.875rem !important;
-        padding: 0.5rem 1rem !important;
-        box-shadow: none !important;
-        transition: border-color 0.15s, background-color 0.15s !important;
-    }
-
-    .stButton > button:hover {
-        background-color: #30363d !important;
-        border-color: #c9a84c !important;
-        transform: none !important;
-        box-shadow: none !important;
-    }
-
-    [data-testid="stMetric"] {
-        background-color: #161b22 !important;
-        border: 1px solid #21262d !important;
-        border-radius: 8px !important;
-        padding: 1.25rem !important;
-        box-shadow: none !important;
-    }
-
-    [data-testid="stMetricLabel"] p {
-        color: #8b949e !important;
-        font-size: 0.7rem !important;
-        font-weight: 500 !important;
+        font-size: 0.8rem !important;
         text-transform: uppercase !important;
-        letter-spacing: 0.06em !important;
+        letter-spacing: 0.08em !important;
     }
 
-    [data-testid="stMetricValue"] {
-        color: #e6edf3 !important;
-        font-size: 1.4rem !important;
+    /* ── Sidebar ── */
+    [data-testid="stSidebar"] {
+        background-color: #0f1623 !important;
+        border-right: 1px solid #1e293b !important;
+    }
+
+    [data-testid="stSidebar"] [data-testid="stMarkdownContainer"] p {
+        color: #94a3b8 !important;
+        font-size: 0.75rem !important;
+        text-transform: uppercase !important;
+        letter-spacing: 0.1em !important;
         font-weight: 600 !important;
     }
 
-    .stTextInput > div > div > input,
-    .stNumberInput > div > div > input,
-    .stDateInput > div > div > input,
-    .stTextArea > div > div > textarea {
-        background-color: #0d1117 !important;
-        border: 1px solid #30363d !important;
-        border-radius: 6px !important;
-        color: #e6edf3 !important;
-        font-size: 0.875rem !important;
+    /* Sidebar expanders as clean sections */
+    [data-testid="stSidebar"] .st-expander {
+        background-color: #131c2e !important;
+        border: 1px solid #1e293b !important;
+        border-radius: 10px !important;
+        margin-bottom: 0.5rem !important;
+        box-shadow: none !important;
     }
 
-    .stTextInput > div > div > input:focus,
-    .stNumberInput > div > div > input:focus {
-        border-color: #c9a84c !important;
-        box-shadow: 0 0 0 2px rgba(201,168,76,0.15) !important;
+    [data-testid="stSidebar"] .st-expander:hover {
+        border-color: #3b82f6 !important;
         transform: none !important;
+        box-shadow: none !important;
     }
 
-    .stSelectbox > div > div {
-        background-color: #0d1117 !important;
-        border: 1px solid #30363d !important;
-        border-radius: 6px !important;
-        color: #e6edf3 !important;
+    /* ── Top Navigation Tabs ── */
+    .stTabs [data-baseweb="tab-list"] {
+        background-color: #0f1623 !important;
+        border-bottom: 1px solid #1e293b !important;
+        gap: 0 !important;
+        padding: 0 0.5rem !important;
     }
 
     .stTabs [role="tab"] {
         background: transparent !important;
         border: none !important;
-        border-bottom: 2px solid transparent !important;
+        border-bottom: 3px solid transparent !important;
         border-radius: 0 !important;
-        color: #8b949e !important;
+        color: #64748b !important;
         font-weight: 500 !important;
-        font-size: 0.875rem !important;
-        padding: 0.6rem 1rem !important;
-        margin-right: 0 !important;
+        font-size: 0.85rem !important;
+        padding: 0.85rem 1.25rem !important;
         transition: color 0.15s !important;
         box-shadow: none !important;
+        letter-spacing: 0.01em !important;
     }
 
     .stTabs [role="tab"]:hover {
-        color: #e6edf3 !important;
+        color: #cbd5e1 !important;
+        background: rgba(59,130,246,0.05) !important;
         transform: none !important;
         box-shadow: none !important;
-        background: transparent !important;
     }
 
     .stTabs [aria-selected="true"] {
-        color: #e6edf3 !important;
-        border-bottom: 2px solid #c9a84c !important;
+        color: #f1f5f9 !important;
+        border-bottom: 3px solid #3b82f6 !important;
         background: transparent !important;
+        font-weight: 600 !important;
     }
 
-    .st-expander {
-        background-color: #161b22 !important;
-        border: 1px solid #21262d !important;
+    /* ── Buttons ── */
+    .stButton > button {
+        background-color: #1e293b !important;
+        color: #e2e8f0 !important;
+        border: 1px solid #334155 !important;
         border-radius: 8px !important;
+        font-weight: 500 !important;
+        font-size: 0.85rem !important;
+        padding: 0.5rem 1.2rem !important;
         box-shadow: none !important;
-        transition: none !important;
+        transition: all 0.15s !important;
+        letter-spacing: 0.01em !important;
     }
 
-    .st-expander:hover {
+    .stButton > button:hover {
+        background-color: #253347 !important;
+        border-color: #3b82f6 !important;
+        color: #f1f5f9 !important;
         transform: none !important;
-        box-shadow: none !important;
+        box-shadow: 0 0 0 1px rgba(59,130,246,0.3) !important;
     }
 
-    .stDataFrame {
-        border: 1px solid #21262d !important;
+    /* ── Metric cards ── */
+    [data-testid="stMetric"] {
+        background: linear-gradient(135deg, #131c2e 0%, #0f1623 100%) !important;
+        border: 1px solid #1e293b !important;
+        border-radius: 12px !important;
+        padding: 1.25rem 1.5rem !important;
+        box-shadow: 0 1px 3px rgba(0,0,0,0.4) !important;
+    }
+
+    [data-testid="stMetricLabel"] p {
+        color: #64748b !important;
+        font-size: 0.68rem !important;
+        font-weight: 600 !important;
+        text-transform: uppercase !important;
+        letter-spacing: 0.08em !important;
+    }
+
+    [data-testid="stMetricValue"] {
+        color: #f1f5f9 !important;
+        font-size: 1.5rem !important;
+        font-weight: 700 !important;
+        letter-spacing: -0.02em !important;
+    }
+
+    [data-testid="stMetricDelta"] {
+        font-size: 0.8rem !important;
+        font-weight: 500 !important;
+    }
+
+    /* ── Inputs ── */
+    .stTextInput > div > div > input,
+    .stNumberInput > div > div > input,
+    .stDateInput > div > div > input {
+        background-color: #0b0f19 !important;
+        border: 1px solid #1e293b !important;
         border-radius: 8px !important;
-        background-color: #161b22 !important;
+        color: #e2e8f0 !important;
+        font-size: 0.875rem !important;
+    }
+
+    .stTextInput > div > div > input:focus,
+    .stNumberInput > div > div > input:focus {
+        border-color: #3b82f6 !important;
+        box-shadow: 0 0 0 2px rgba(59,130,246,0.2) !important;
+        transform: none !important;
+    }
+
+    .stSelectbox > div > div {
+        background-color: #0b0f19 !important;
+        border: 1px solid #1e293b !important;
+        border-radius: 8px !important;
+        color: #e2e8f0 !important;
+    }
+
+    /* ── DataFrames ── */
+    .stDataFrame {
+        border: 1px solid #1e293b !important;
+        border-radius: 10px !important;
+        overflow: hidden !important;
         box-shadow: none !important;
     }
 
-    .stDataFrame:hover {
-        box-shadow: none !important;
-    }
+    .stDataFrame:hover { box-shadow: none !important; }
 
+    /* ── Misc ── */
     .stCaption {
-        color: #8b949e !important;
-        font-size: 0.78rem !important;
+        color: #475569 !important;
+        font-size: 0.75rem !important;
         font-style: normal !important;
     }
 
-    hr {
-        border-color: #21262d !important;
-    }
+    hr { border-color: #1e293b !important; }
 
-    .stAlert {
-        border-radius: 6px !important;
-        box-shadow: none !important;
-    }
+    .stAlert { border-radius: 8px !important; box-shadow: none !important; }
 
-    .main .block-container {
-        padding-top: 2rem !important;
-        max-width: 1100px !important;
+    /* ── Mobile responsive ── */
+    @media (max-width: 768px) {
+        .main .block-container {
+            padding-left: 0.75rem !important;
+            padding-right: 0.75rem !important;
+        }
+        [data-testid="stMetricValue"] {
+            font-size: 1.2rem !important;
+        }
+        .stTabs [role="tab"] {
+            font-size: 0.75rem !important;
+            padding: 0.7rem 0.6rem !important;
+        }
     }
 </style>
 """, unsafe_allow_html=True)
@@ -438,8 +483,12 @@ if "cashflow" not in st.session_state:
 # -------------------------
 # Sidebar - Balances
 # -------------------------
-st.sidebar.title("Portfolio Tracker")
-st.sidebar.markdown("---")
+st.sidebar.markdown("""
+<div style='padding:1rem 0 0.5rem 0;'>
+    <div style='font-size:0.65rem; letter-spacing:0.12em; text-transform:uppercase; color:#475569; font-weight:600;'>Portfolio Tracker</div>
+    <div style='height:2px; background:linear-gradient(90deg,#3b82f6,#6366f1); border-radius:1px; margin-top:0.4rem;'></div>
+</div>
+""", unsafe_allow_html=True)
 
 with st.sidebar.expander("Balances", expanded=False):
     st.header("Broker Cash Balance")
@@ -883,35 +932,37 @@ def compute_portfolio(transactions_df=None, cash_balance_local=None):
         st.error(f"TAO-EUR is present in transactions but missing from portfolio. Reason: {tao_excluded_reason or 'Unknown error in processing'}.")
     return portfolio_df, realized, unrealized_total, total_profit, profit_percentage
 
-# -------------------------
-# Refresh button
-# -------------------------
-if st.button("Refresh Prices"):
-    st.cache_data.clear()
-    st.rerun()
-
-# -------------------------
-# Navigation
-# -------------------------
-st.sidebar.title("Navigation")
-
-page = st.sidebar.radio(
-    "Select a section:",
-    [
-        "Cashflow",
-        "Historical Portfolio Value",
-        "Portfolio Overview",
-        "Asset Allocation",
-        "Historical Price Charts"
-    ],
-)
-
 portfolio_df, realized, unrealized, total_profit, profit_percentage = compute_portfolio()
 
 # -------------------------
-# Tab 1: Cashflow
+# Header row
 # -------------------------
-if page == "Cashflow":
+col_title, col_refresh = st.columns([6, 1])
+with col_title:
+    st.title("Portfolio Tracker")
+with col_refresh:
+    st.markdown("<br>", unsafe_allow_html=True)
+    if st.button("Refresh", use_container_width=True):
+        st.cache_data.clear()
+        st.rerun()
+
+st.markdown("<div style='height:4px; background:linear-gradient(90deg,#3b82f6,#6366f1,#8b5cf6); border-radius:2px; margin-bottom:1.5rem;'></div>", unsafe_allow_html=True)
+
+# -------------------------
+# Navigation tabs
+# -------------------------
+tab_overview, tab_history, tab_cashflow, tab_allocation, tab_charts = st.tabs([
+    "Overview",
+    "Portfolio History",
+    "Cashflow",
+    "Allocation",
+    "Price Charts"
+])
+
+# -------------------------
+# Tab: Cashflow
+# -------------------------
+with tab_cashflow:
     st.header("Cashflow")
 
     if not st.session_state.cashflow.empty:
@@ -978,10 +1029,10 @@ if page == "Cashflow":
         st.info("No cashflow data available yet.")
 
 # -------------------------
-# Tab 2: Historical Portfolio Value
+# Tab: Historical Portfolio Value
 # -------------------------
-elif page == "Historical Portfolio Value":
-    st.header("Historical Portfolio Value")
+with tab_history:
+    st.header("Portfolio History")
     st.markdown(
         """
         This chart logs the **total portfolio value** once per day (assets + broker cash + bank balances).
@@ -1032,18 +1083,18 @@ elif page == "Historical Portfolio Value":
             y=["Total Portfolio Value (€)", "No Investment (€)"],
             title="Portfolio Value vs. No Investment",
             labels={"Date": "Date", "value": "Value (€)", "variable": ""},
-            color_discrete_sequence=["#c9a84c", "#4299e1"],
+            color_discrete_sequence=["#3b82f6", "#6366f1"],
         )
         fig_total.update_traces(mode="lines", line=dict(width=2))
         fig_total.update_layout(
             hovermode="x unified",
-            plot_bgcolor="#0d1117",
-            paper_bgcolor="#0d1117",
-            font=dict(color="#8b949e", size=12),
-            title=dict(font=dict(color="#e6edf3", size=14), x=0),
-            legend=dict(title="", orientation="h", yanchor="bottom", y=1.02, xanchor="left", x=0, font=dict(color="#8b949e")),
-            xaxis=dict(gridcolor="#21262d", linecolor="#30363d", tickfont=dict(color="#8b949e")),
-            yaxis=dict(gridcolor="#21262d", linecolor="#30363d", tickfont=dict(color="#8b949e")),
+            plot_bgcolor="#0b0f19",
+            paper_bgcolor="#0b0f19",
+            font=dict(color="#64748b", size=12),
+            title=dict(font=dict(color="#f1f5f9", size=14), x=0),
+            legend=dict(title="", orientation="h", yanchor="bottom", y=1.02, xanchor="left", x=0, font=dict(color="#94a3b8")),
+            xaxis=dict(gridcolor="#1e293b", linecolor="#1e293b", tickfont=dict(color="#64748b")),
+            yaxis=dict(gridcolor="#1e293b", linecolor="#1e293b", tickfont=dict(color="#64748b")),
             margin=dict(l=0, r=0, t=40, b=0),
         )
         st.plotly_chart(fig_total, use_container_width=True)
@@ -1098,9 +1149,9 @@ elif page == "Historical Portfolio Value":
         )
 
 # -------------------------
-# Tab 3: Portfolio Overview
+# Tab: Portfolio Overview
 # -------------------------
-elif page == "Portfolio Overview":
+with tab_overview:
     st.header("Portfolio Overview")
 
     portfolio_df, realized, unrealized, total_profit, profit_percentage = compute_portfolio()
@@ -1172,11 +1223,11 @@ elif page == "Portfolio Overview":
         st.info("No transactions available. Add transactions using the sidebar.")
 
 # -------------------------
-# Tab 4: Asset Allocation
+# Tab: Asset Allocation
 # -------------------------
-elif page == "Asset Allocation":
+with tab_allocation:
     st.header("Asset Allocation")
-    custom_colors = ['#c9a84c', '#4299e1', '#3fb950', '#f85149', '#b794f4', '#76e4f7']
+    custom_colors = ['#3b82f6', '#6366f1', '#22c55e', '#f59e0b', '#ef4444', '#8b5cf6']
 
     allocation_rows = []
 
@@ -1241,9 +1292,9 @@ elif page == "Asset Allocation":
                 legend=dict(orientation="h", yanchor="top", y=-0.18, xanchor="center", x=0.5, font=dict(color="#8b949e")),
                 margin=dict(l=20, r=20, t=40, b=80),
                 font=dict(size=12, color="#8b949e"),
-                paper_bgcolor="#0d1117",
-                plot_bgcolor="#0d1117",
-                title=dict(font=dict(color="#e6edf3", size=14), x=0),
+                paper_bgcolor="#0b0f19",
+                plot_bgcolor="#0b0f19",
+                title=dict(font=dict(color="#f1f5f9", size=14), x=0),
                 width=None,
                 height=520
             )
@@ -1254,14 +1305,24 @@ elif page == "Asset Allocation":
                 f"""
                 <div style="height:520px; display:flex; align-items:center; justify-content:center;">
                     <div style="width:100%; padding-left:12px;">
-                        <div style="font-size:0.7rem; text-transform:uppercase; letter-spacing:0.08em; color:#8b949e; margin-bottom:1rem;">Global Allocation</div>
-                        <div style="font-size:16px; line-height:1.8;">
-                            <div><span style="font-weight:600;">Crypto :</span> {pct_crypto:.2f}% — €{crypto_value:,.2f}</div>
-                            <div><span style="font-weight:600;">Actions / ETF :</span> {pct_stocks:.2f}% — €{stock_value:,.2f}</div>
-                            <div><span style="font-weight:600;">Cash & Banks :</span> {pct_cash:.2f}% — €{cash_value:,.2f}</div>
+                        <div style="font-size:0.65rem; text-transform:uppercase; letter-spacing:0.1em; color:#475569; font-weight:600; margin-bottom:1.25rem;">Breakdown</div>
+                        <div style="font-size:0.9rem; line-height:2.4;">
+                            <div style="display:flex; justify-content:space-between; border-bottom:1px solid #1e293b; padding-bottom:0.4rem;">
+                                <span style="color:#94a3b8;">Crypto</span>
+                                <span style="color:#f1f5f9; font-weight:600;">{pct_crypto:.1f}%</span>
+                            </div>
+                            <div style="display:flex; justify-content:space-between; border-bottom:1px solid #1e293b; padding-bottom:0.4rem;">
+                                <span style="color:#94a3b8;">Stocks / ETF</span>
+                                <span style="color:#f1f5f9; font-weight:600;">{pct_stocks:.1f}%</span>
+                            </div>
+                            <div style="display:flex; justify-content:space-between; padding-bottom:0.4rem;">
+                                <span style="color:#94a3b8;">Cash & Banks</span>
+                                <span style="color:#f1f5f9; font-weight:600;">{pct_cash:.1f}%</span>
+                            </div>
                         </div>
-                        <div style="margin-top:12px; color:#9aa4ad; font-size:13px;">
-                            Total: €{total_value:,.2f}
+                        <div style="margin-top:1rem; padding-top:0.75rem; border-top:1px solid #1e293b;">
+                            <div style="font-size:0.65rem; text-transform:uppercase; letter-spacing:0.1em; color:#475569; font-weight:600;">Total</div>
+                            <div style="font-size:1.3rem; font-weight:700; color:#f1f5f9; letter-spacing:-0.02em;">€{total_value:,.2f}</div>
                         </div>
                     </div>
                 </div>
@@ -1270,9 +1331,9 @@ elif page == "Asset Allocation":
             )
 
 # -------------------------
-# Tab 5: Historical Price Charts
+# Tab: Historical Price Charts
 # -------------------------
-elif page == "Historical Price Charts":
+with tab_charts:
     st.header("Historical Price Charts")
     if not portfolio_df.empty:
         selected_ticker = st.selectbox("Select a Ticker for Historical Chart", options=portfolio_df['Ticker'].tolist(), key="hist_ticker")
@@ -1287,7 +1348,7 @@ elif page == "Historical Price Charts":
 
                 fig = px.line(hist_data, x='Date', y='Close', title=f"{selected_ticker} — {period}",
                               labels={'Close': 'Price (EUR)', 'Date': 'Date'},
-                              color_discrete_sequence=["#c9a84c"])
+                              color_discrete_sequence=["#3b82f6"])
                 fig.add_hline(y=avg_purchase, line_dash="dash", line_color="#f85149",
                               annotation_text=f"Avg: €{avg_purchase:.2f}", annotation_position="top left",
                               annotation_font=dict(color="#f85149", size=11))
@@ -1295,9 +1356,11 @@ elif page == "Historical Price Charts":
                 fig.update_layout(xaxis_title="", yaxis_title="Price (EUR)", hovermode='x unified',
                                   font=dict(size=12, color="#8b949e"),
                                   title=dict(font=dict(color="#e6edf3", size=14), x=0),
-                                  plot_bgcolor='#0d1117', paper_bgcolor='#0d1117',
-                                  xaxis=dict(gridcolor="#21262d", linecolor="#30363d", tickfont=dict(color="#8b949e")),
-                                  yaxis=dict(gridcolor="#21262d", linecolor="#30363d", tickfont=dict(color="#8b949e")),
+                                  plot_bgcolor='#0b0f19', paper_bgcolor='#0b0f19',
+                                  font=dict(color="#64748b"),
+                                  title=dict(font=dict(color="#f1f5f9", size=14), x=0),
+                                  xaxis=dict(gridcolor="#1e293b", linecolor="#1e293b", tickfont=dict(color="#64748b")),
+                                  yaxis=dict(gridcolor="#1e293b", linecolor="#1e293b", tickfont=dict(color="#64748b")),
                                   margin=dict(l=0, r=0, t=40, b=0))
                 st.plotly_chart(fig, use_container_width=True)
 
