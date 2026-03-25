@@ -10,160 +10,179 @@ from datetime import datetime, timedelta, time, date
 # -------------------------
 st.markdown("""
 <style>
-    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
+    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
 
-    body, .main {
-        font-family: 'Inter', sans-serif;
-        background: linear-gradient(135deg, #4a5568 0%, #2d3748 100%);
-        color: #f7fafc;
+    html, body, .stApp, .main {
+        font-family: 'Inter', sans-serif !important;
+        background-color: #0d1117 !important;
+        color: #e6edf3 !important;
     }
 
     h1 {
-        color: #f7fafc;
-        font-weight: 700;
-        font-size: 2.5rem;
-        margin-bottom: 1rem;
-        text-shadow: 0 2px 4px rgba(0,0,0,0.3);
+        color: #e6edf3 !important;
+        font-weight: 600 !important;
+        font-size: 1.6rem !important;
+        letter-spacing: -0.02em !important;
+        border-bottom: 1px solid #21262d !important;
+        padding-bottom: 0.75rem !important;
+        margin-bottom: 1.5rem !important;
     }
 
     h2 {
-        color: #4fd1c5;
-        font-weight: 600;
-        font-size: 1.75rem;
-        background: linear-gradient(90deg, #4fd1c5, #38b2ac);
-        -webkit-background-clip: text;
-        -webkit-text-fill-color: transparent;
-        background-clip: text;
+        color: #e6edf3 !important;
+        font-weight: 600 !important;
+        font-size: 1.25rem !important;
+        letter-spacing: -0.01em !important;
+        -webkit-text-fill-color: unset !important;
+        background: none !important;
     }
 
-    .sidebar .sidebar-content {
-        background: linear-gradient(180deg, #2d3748 0%, #4a5568 100%);
-        border-right: 1px solid #4fd1c5;
-        padding: 1.5rem;
-        box-shadow: 0 4px 20px rgba(0,0,0,0.4);
-        border-radius: 0 12px 12px 0;
-        transition: box-shadow 0.3s ease-in-out;
+    h3 {
+        color: #8b949e !important;
+        font-weight: 500 !important;
+        font-size: 1rem !important;
     }
 
-    .sidebar .sidebar-content:hover {
-        box-shadow: 0 6px 25px rgba(0,0,0,0.5);
+    [data-testid="stSidebar"] {
+        background-color: #161b22 !important;
+        border-right: 1px solid #21262d !important;
     }
 
-    .stButton>button {
-        background: linear-gradient(135deg, #4a5568 0%, #4fd1c5 100%);
-        color: #f7fafc;
-        border-radius: 12px;
-        padding: 0.75rem 1.5rem;
-        font-weight: 500;
-        transition: all 0.3s ease-in-out;
-        border: none;
-        box-shadow: 0 4px 15px rgba(0,0,0,0.4);
+    .stButton > button {
+        background-color: #21262d !important;
+        color: #e6edf3 !important;
+        border: 1px solid #30363d !important;
+        border-radius: 6px !important;
+        font-weight: 500 !important;
+        font-size: 0.875rem !important;
+        padding: 0.5rem 1rem !important;
+        box-shadow: none !important;
+        transition: border-color 0.15s, background-color 0.15s !important;
     }
 
-    .stButton>button:hover {
-        background: linear-gradient(135deg, #4fd1c5 0%, #38b2ac 100%);
-        transform: translateY(-2px) scale(1.02);
-        box-shadow: 0 6px 20px rgba(0,0,0,0.5);
+    .stButton > button:hover {
+        background-color: #30363d !important;
+        border-color: #c9a84c !important;
+        transform: none !important;
+        box-shadow: none !important;
     }
 
-    .stMetric {
-        background: linear-gradient(135deg, #2d3748 0%, #4a5568 100%);
-        border-radius: 16px;
-        padding: 1.5rem;
-        box-shadow: 0 6px 20px rgba(0,0,0,0.3);
-        margin-bottom: 1.5rem;
-        transition: transform 0.2s ease-in-out, box-shadow 0.2s ease-in-out;
-        border: 1px solid rgba(79,209,197,0.3);
-        color: #f7fafc;
+    [data-testid="stMetric"] {
+        background-color: #161b22 !important;
+        border: 1px solid #21262d !important;
+        border-radius: 8px !important;
+        padding: 1.25rem !important;
+        box-shadow: none !important;
     }
 
-    .stMetric:hover {
-        transform: translateY(-1px);
-        box-shadow: 0 8px 25px rgba(0,0,0,0.4);
+    [data-testid="stMetricLabel"] p {
+        color: #8b949e !important;
+        font-size: 0.7rem !important;
+        font-weight: 500 !important;
+        text-transform: uppercase !important;
+        letter-spacing: 0.06em !important;
     }
 
-    .stDataFrame {
-        border-radius: 12px;
-        overflow: hidden;
-        background: linear-gradient(135deg, #2d3748 0%, #4a5568 100%);
-        box-shadow: 0 4px 15px rgba(0,0,0,0.3);
-        transition: box-shadow 0.3s ease-in-out;
-        color: #f7fafc;
+    [data-testid="stMetricValue"] {
+        color: #e6edf3 !important;
+        font-size: 1.4rem !important;
+        font-weight: 600 !important;
     }
 
-    .stDataFrame:hover {
-        box-shadow: 0 6px 20px rgba(0,0,0,0.4);
+    .stTextInput > div > div > input,
+    .stNumberInput > div > div > input,
+    .stDateInput > div > div > input,
+    .stTextArea > div > div > textarea {
+        background-color: #0d1117 !important;
+        border: 1px solid #30363d !important;
+        border-radius: 6px !important;
+        color: #e6edf3 !important;
+        font-size: 0.875rem !important;
     }
 
-    .st-expander {
-        background: linear-gradient(135deg, #2d3748 0%, #4a5568 100%);
-        border-radius: 12px;
-        box-shadow: 0 4px 15px rgba(0,0,0,0.3);
-        transition: all 0.3s ease-in-out;
-        border: 1px solid rgba(79,209,197,0.3);
-        color: #f7fafc;
+    .stTextInput > div > div > input:focus,
+    .stNumberInput > div > div > input:focus {
+        border-color: #c9a84c !important;
+        box-shadow: 0 0 0 2px rgba(201,168,76,0.15) !important;
+        transform: none !important;
     }
 
-    .st-expander:hover {
-        box-shadow: 0 6px 20px rgba(0,0,0,0.4);
-        transform: translateY(-1px);
-    }
-
-    .stTextInput, .stSelectbox, .stNumberInput, .stDateInput {
-        background: linear-gradient(135deg, #4a5568 0%, #2d3748 100%);
-        border: 1px solid #4fd1c5;
-        border-radius: 10px;
-        padding: 0.75rem;
-        transition: all 0.3s ease-in-out;
-        color: #f7fafc;
-    }
-
-    .stTextInput>input:focus, .stNumberInput>input:focus, .stDateInput>input:focus {
-        border-color: #4fd1c5;
-        box-shadow: 0 0 0 3px rgba(79,209,197,0.2);
-        transform: scale(1.02);
-    }
-
-    .stCaption {
-        color: #a0aec0;
-        font-size: 0.9rem;
-        font-style: italic;
-    }
-
-    .stAlert {
-        background: linear-gradient(135deg, #4b2e2e 0%, #3b1f1f 100%);
-        color: #f8d7da;
-        border: 1px solid #f5c6cb;
-        border-radius: 10px;
-        padding: 1.25rem;
-        box-shadow: 0 4px 15px rgba(0,0,0,0.3);
+    .stSelectbox > div > div {
+        background-color: #0d1117 !important;
+        border: 1px solid #30363d !important;
+        border-radius: 6px !important;
+        color: #e6edf3 !important;
     }
 
     .stTabs [role="tab"] {
-        background: linear-gradient(135deg, #2d3748 0%, #4a5568 100%);
-        border: 1px solid #4fd1c5;
-        border-radius: 10px 10px 0 0;
-        padding: 0.75rem 1.5rem;
-        font-weight: 500;
-        transition: all 0.3s ease-in-out;
-        margin-right: 0.5rem;
-        color: #f7fafc;
+        background: transparent !important;
+        border: none !important;
+        border-bottom: 2px solid transparent !important;
+        border-radius: 0 !important;
+        color: #8b949e !important;
+        font-weight: 500 !important;
+        font-size: 0.875rem !important;
+        padding: 0.6rem 1rem !important;
+        margin-right: 0 !important;
+        transition: color 0.15s !important;
+        box-shadow: none !important;
     }
 
     .stTabs [role="tab"]:hover {
-        background: linear-gradient(135deg, #4a5d70 0%, #2d3748 100%);
-        transform: translateY(-1px);
-        box-shadow: 0 4px 10px rgba(0,0,0,0.3);
+        color: #e6edf3 !important;
+        transform: none !important;
+        box-shadow: none !important;
+        background: transparent !important;
     }
 
     .stTabs [aria-selected="true"] {
-        background: linear-gradient(135deg, #4a5d70 0%, #2d3748 100%);
-        border-bottom: 2px solid #4fd1c5;
-        color: #4fd1c5;
+        color: #e6edf3 !important;
+        border-bottom: 2px solid #c9a84c !important;
+        background: transparent !important;
+    }
+
+    .st-expander {
+        background-color: #161b22 !important;
+        border: 1px solid #21262d !important;
+        border-radius: 8px !important;
+        box-shadow: none !important;
+        transition: none !important;
+    }
+
+    .st-expander:hover {
+        transform: none !important;
+        box-shadow: none !important;
+    }
+
+    .stDataFrame {
+        border: 1px solid #21262d !important;
+        border-radius: 8px !important;
+        background-color: #161b22 !important;
+        box-shadow: none !important;
+    }
+
+    .stDataFrame:hover {
+        box-shadow: none !important;
+    }
+
+    .stCaption {
+        color: #8b949e !important;
+        font-size: 0.78rem !important;
+        font-style: normal !important;
+    }
+
+    hr {
+        border-color: #21262d !important;
+    }
+
+    .stAlert {
+        border-radius: 6px !important;
+        box-shadow: none !important;
     }
 
     .main .block-container {
-        transition: opacity 0.3s ease-in-out;
+        padding-top: 2rem !important;
+        max-width: 1100px !important;
     }
 </style>
 """, unsafe_allow_html=True)
@@ -378,24 +397,27 @@ if "logged_in" not in st.session_state:
     st.session_state.logged_in = False
 
 if not st.session_state.logged_in:
-    st.title("Portfolio Tracker")
-    st.markdown("---")
-    col1, col2, col3 = st.columns([1, 2, 1])
+    col1, col2, col3 = st.columns([1, 1.2, 1])
     with col2:
-        st.subheader("Login")
-        password = st.text_input("Wachtwoord", type="password")
-        if st.button("Inloggen", use_container_width=True):
+        st.markdown("<br><br>", unsafe_allow_html=True)
+        st.markdown(
+            "<h1 style='text-align:center; border:none; font-size:1.4rem; letter-spacing:0.05em; color:#8b949e; text-transform:uppercase; font-weight:400;'>Portfolio Tracker</h1>",
+            unsafe_allow_html=True
+        )
+        st.markdown("<div style='border-top:1px solid #21262d; margin:1.5rem 0;'></div>", unsafe_allow_html=True)
+        password = st.text_input("Password", type="password", label_visibility="collapsed", placeholder="Enter password")
+        if st.button("Sign In", use_container_width=True):
             if password == st.secrets["auth"]["password"]:
                 st.session_state.logged_in = True
                 st.rerun()
             else:
-                st.error("Ongeldig wachtwoord")
+                st.error("Invalid password")
     st.stop()
 
 # -------------------------
 # App title
 # -------------------------
-st.title("Portfolio Tracker Dashboard")
+st.title("Portfolio Tracker")
 
 # -------------------------
 # Session State
@@ -416,10 +438,10 @@ if "cashflow" not in st.session_state:
 # -------------------------
 # Sidebar - Balances
 # -------------------------
-st.sidebar.title("📋 Portfolio Dashboard")
+st.sidebar.title("Portfolio Tracker")
 st.sidebar.markdown("---")
 
-with st.sidebar.expander("💰 Broker & Bank Balances", expanded=False):
+with st.sidebar.expander("Balances", expanded=False):
     st.header("Broker Cash Balance")
     cash_balance_input = st.number_input(
         "Cash Balance (EUR)",
@@ -465,7 +487,7 @@ if (
 # -------------------------
 # Sidebar - Add Transaction
 # -------------------------
-with st.sidebar.expander("🧾 Add Transaction", expanded=False):
+with st.sidebar.expander("Add Transaction", expanded=False):
     trans_type = st.selectbox("Transaction Type", ['Buy', 'Dividend', 'Staking', 'Transfer'], key="add_trans_type")
     transaction_date = st.date_input("Transaction Date", value=datetime.today(), key="add_date")
 
@@ -507,7 +529,7 @@ with st.sidebar.expander("🧾 Add Transaction", expanded=False):
 # -------------------------
 # Sidebar - Edit/Delete Transaction
 # -------------------------
-with st.sidebar.expander("✏️ Edit/Delete Transaction", expanded=False):
+with st.sidebar.expander("Edit / Delete Transaction", expanded=False):
     if not st.session_state.get('transactions', pd.DataFrame()).empty:
         trans_index = st.selectbox(
             "Select Transaction to Edit/Delete",
@@ -564,8 +586,8 @@ with st.sidebar.expander("✏️ Edit/Delete Transaction", expanded=False):
 # -------------------------
 # Sidebar - Cashflow
 # -------------------------
-with st.sidebar.expander("📊 Cashflow Tracker", expanded=False):
-    st.subheader("➕ Add Cashflow Entry")
+with st.sidebar.expander("Cashflow Tracker", expanded=False):
+    st.subheader("Add Cashflow Entry")
     new_category = st.text_input("Category", key="cashflow_new_category_cf")
     new_type = st.selectbox("Type", ["Income", "Expense"], key="cashflow_new_type_cf")
     new_amount = st.number_input("Amount (EUR)", min_value=0.0, step=0.01, key="cashflow_new_amount_cf")
@@ -583,7 +605,7 @@ with st.sidebar.expander("📊 Cashflow Tracker", expanded=False):
 
     st.markdown("---")
 
-    st.subheader("✏️ Edit/Delete Existing Entries")
+    st.subheader("Edit / Delete Entries")
     if not st.session_state.cashflow.empty:
         cf_index = st.selectbox(
             "Select Entry",
@@ -871,16 +893,16 @@ if st.button("Refresh Prices"):
 # -------------------------
 # Navigation
 # -------------------------
-st.sidebar.title("📊 Navigation")
+st.sidebar.title("Navigation")
 
 page = st.sidebar.radio(
     "Select a section:",
     [
-        " Cashflow",
-        " Historical Portfolio Value",
-        " Portfolio Overview",
-        " Asset Allocation",
-        " Historical Price Charts"
+        "Cashflow",
+        "Historical Portfolio Value",
+        "Portfolio Overview",
+        "Asset Allocation",
+        "Historical Price Charts"
     ],
 )
 
@@ -889,8 +911,8 @@ portfolio_df, realized, unrealized, total_profit, profit_percentage = compute_po
 # -------------------------
 # Tab 1: Cashflow
 # -------------------------
-if page == " Cashflow":
-    st.header(" Cashflow")
+if page == "Cashflow":
+    st.header("Cashflow")
 
     if not st.session_state.cashflow.empty:
         income_df = st.session_state.cashflow[st.session_state.cashflow["Amount"] > 0].sort_values(by="Amount", ascending=False)
@@ -903,12 +925,14 @@ if page == " Cashflow":
 
         st.markdown(
             f"""
-            <div style="text-align:center; font-size:22px; font-weight:600; line-height:1.6;">
-                 Total Income: €{total_income:,.2f} &nbsp;&nbsp;|&nbsp;&nbsp;
-                 Total Expenses: €{abs(total_expenses):,.2f}
+            <div style="text-align:center; font-size:0.85rem; font-weight:500; letter-spacing:0.05em; text-transform:uppercase; color:#8b949e; line-height:2.5;">
+                Total Income: <span style="color:#3fb950; font-size:1.1rem; font-weight:600;">€{total_income:,.2f}</span>
+                &nbsp;&nbsp;&nbsp;|&nbsp;&nbsp;&nbsp;
+                Total Expenses: <span style="color:#f85149; font-size:1.1rem; font-weight:600;">€{abs(total_expenses):,.2f}</span>
             </div>
-            <div style="text-align:center; font-size:30px; font-weight:700; margin-top:10px;">
-                 Net Cashflow: <span style="color:{net_color};">€{net_cashflow:,.2f}</span>
+            <div style="text-align:center; font-size:0.75rem; font-weight:500; letter-spacing:0.08em; text-transform:uppercase; color:#8b949e; margin-top:0.5rem;">
+                Net Monthly Cashflow &nbsp;
+                <span style="color:{net_color}; font-size:1.6rem; font-weight:700; letter-spacing:-0.02em;">€{net_cashflow:,.2f}</span>
             </div>
             """,
             unsafe_allow_html=True
@@ -919,7 +943,7 @@ if page == " Cashflow":
         col1, col2 = st.columns(2)
 
         with col1:
-            st.markdown("###  Income")
+            st.markdown("### Income")
             if not income_df.empty:
                 st.dataframe(
                     income_df[CF_DISPLAY_COLS]
@@ -934,7 +958,7 @@ if page == " Cashflow":
                 st.info("No income entries yet.")
 
         with col2:
-            st.markdown("###  Expenses")
+            st.markdown("### Expenses")
             if not expense_df.empty:
                 expense_display = expense_df[CF_DISPLAY_COLS].copy()
                 expense_display["Amount"] = expense_display["Amount"].abs()
@@ -956,8 +980,8 @@ if page == " Cashflow":
 # -------------------------
 # Tab 2: Historical Portfolio Value
 # -------------------------
-elif page == " Historical Portfolio Value":
-    st.header(" Historical Portfolio Value")
+elif page == "Historical Portfolio Value":
+    st.header("Historical Portfolio Value")
     st.markdown(
         """
         This chart logs the **total portfolio value** once per day (assets + broker cash + bank balances).
@@ -1006,15 +1030,21 @@ elif page == " Historical Portfolio Value":
             plot_df,
             x="Date",
             y=["Total Portfolio Value (€)", "No Investment (€)"],
-            title="Portfolio Value vs. No Investment (Daily)",
-            labels={"Date": "Date", "value": "Total (€)", "variable": "Scenario"},
+            title="Portfolio Value vs. No Investment",
+            labels={"Date": "Date", "value": "Value (€)", "variable": ""},
+            color_discrete_sequence=["#c9a84c", "#4299e1"],
         )
-        fig_total.update_traces(mode="lines+markers")
+        fig_total.update_traces(mode="lines", line=dict(width=2))
         fig_total.update_layout(
             hovermode="x unified",
-            plot_bgcolor="rgba(0,0,0,0)",
-            paper_bgcolor="rgba(0,0,0,0)",
-            legend=dict(title="", orientation="h", yanchor="bottom", y=1.02, xanchor="center", x=0.5),
+            plot_bgcolor="#0d1117",
+            paper_bgcolor="#0d1117",
+            font=dict(color="#8b949e", size=12),
+            title=dict(font=dict(color="#e6edf3", size=14), x=0),
+            legend=dict(title="", orientation="h", yanchor="bottom", y=1.02, xanchor="left", x=0, font=dict(color="#8b949e")),
+            xaxis=dict(gridcolor="#21262d", linecolor="#30363d", tickfont=dict(color="#8b949e")),
+            yaxis=dict(gridcolor="#21262d", linecolor="#30363d", tickfont=dict(color="#8b949e")),
+            margin=dict(l=0, r=0, t=40, b=0),
         )
         st.plotly_chart(fig_total, use_container_width=True)
 
@@ -1028,13 +1058,13 @@ elif page == " Historical Portfolio Value":
         col2.metric("No Investment (Cash Equivalent)", f"€{baseline:,.2f}")
 
         st.markdown(
-            f"<h3 style='text-align:center;'>Difference vs. No Investment: "
-            f"<span style='color:{'green' if delta_vs_baseline >= 0 else 'red'};'>€{delta_vs_baseline:,.2f} ({pct_vs_baseline:.2f}%)</span></h3>",
+            f"<div style='text-align:center; margin:1rem 0; font-size:0.75rem; text-transform:uppercase; letter-spacing:0.06em; color:#8b949e;'>vs. No Investment &nbsp;"
+            f"<span style='color:{'#3fb950' if delta_vs_baseline >= 0 else '#f85149'}; font-size:1.3rem; font-weight:600; letter-spacing:-0.01em;'>{'+'if delta_vs_baseline>=0 else ''}€{delta_vs_baseline:,.2f} ({pct_vs_baseline:.2f}%)</span></div>",
             unsafe_allow_html=True,
         )
 
     st.markdown("---")
-    st.subheader("🏦 Compare With Bank Savings")
+    st.subheader("Compare With Bank Savings")
 
     bank_interest_rate = st.number_input(
         "Annual Interest Rate (%)",
@@ -1054,10 +1084,14 @@ elif page == " Historical Portfolio Value":
 
         st.markdown(
             f"""
-            <div style="text-align:center;">
-                <h4>If your money had earned <b>{bank_interest_rate:.2f}%</b> this year in a bank account:</h4>
-                <h3>🏦 You would now have <span style="color:green;">€{total_with_interest:,.2f}</span></h3>
-                <p>(Interest gain: +€{interest_gain:,.2f})</p>
+            <div style="text-align:center; padding:1.5rem; background:#161b22; border:1px solid #21262d; border-radius:8px;">
+                <div style="font-size:0.75rem; text-transform:uppercase; letter-spacing:0.06em; color:#8b949e;">
+                    At {bank_interest_rate:.2f}% annual interest
+                </div>
+                <div style="font-size:1.6rem; font-weight:600; color:#3fb950; margin:0.5rem 0;">
+                    €{total_with_interest:,.2f}
+                </div>
+                <div style="font-size:0.85rem; color:#8b949e;">Interest gain: +€{interest_gain:,.2f}</div>
             </div>
             """,
             unsafe_allow_html=True
@@ -1066,8 +1100,8 @@ elif page == " Historical Portfolio Value":
 # -------------------------
 # Tab 3: Portfolio Overview
 # -------------------------
-elif page == " Portfolio Overview":
-    st.header(" Portfolio Overview")
+elif page == "Portfolio Overview":
+    st.header("Portfolio Overview")
 
     portfolio_df, realized, unrealized, total_profit, profit_percentage = compute_portfolio()
 
@@ -1140,9 +1174,9 @@ elif page == " Portfolio Overview":
 # -------------------------
 # Tab 4: Asset Allocation
 # -------------------------
-elif page == " Asset Allocation":
-    st.header(" Asset Allocation")
-    custom_colors = ['#4fd1c5', '#81e6d9', '#a3bffa', '#f6ad55', '#ed8936', '#63b3ed']
+elif page == "Asset Allocation":
+    st.header("Asset Allocation")
+    custom_colors = ['#c9a84c', '#4299e1', '#3fb950', '#f85149', '#b794f4', '#76e4f7']
 
     allocation_rows = []
 
@@ -1204,10 +1238,12 @@ elif page == " Asset Allocation":
             fig.update_traces(textposition="inside", textinfo="percent+label", hovertemplate="%{label}: €%{value:,.2f} (%{percent})")
             fig.update_layout(
                 showlegend=True,
-                legend=dict(orientation="h", yanchor="top", y=-0.18, xanchor="center", x=0.5),
-                margin=dict(l=20, r=20, t=60, b=80),
-                font=dict(size=12),
-                paper_bgcolor="rgba(0,0,0,0)",
+                legend=dict(orientation="h", yanchor="top", y=-0.18, xanchor="center", x=0.5, font=dict(color="#8b949e")),
+                margin=dict(l=20, r=20, t=40, b=80),
+                font=dict(size=12, color="#8b949e"),
+                paper_bgcolor="#0d1117",
+                plot_bgcolor="#0d1117",
+                title=dict(font=dict(color="#e6edf3", size=14), x=0),
                 width=None,
                 height=520
             )
@@ -1218,7 +1254,7 @@ elif page == " Asset Allocation":
                 f"""
                 <div style="height:520px; display:flex; align-items:center; justify-content:center;">
                     <div style="width:100%; padding-left:12px;">
-                        <h3 style="margin-bottom:12px;">📊 Global Allocation</h3>
+                        <div style="font-size:0.7rem; text-transform:uppercase; letter-spacing:0.08em; color:#8b949e; margin-bottom:1rem;">Global Allocation</div>
                         <div style="font-size:16px; line-height:1.8;">
                             <div><span style="font-weight:600;">Crypto :</span> {pct_crypto:.2f}% — €{crypto_value:,.2f}</div>
                             <div><span style="font-weight:600;">Actions / ETF :</span> {pct_stocks:.2f}% — €{stock_value:,.2f}</div>
@@ -1236,8 +1272,8 @@ elif page == " Asset Allocation":
 # -------------------------
 # Tab 5: Historical Price Charts
 # -------------------------
-elif page == " Historical Price Charts":
-    st.header(" Historical Price Charts")
+elif page == "Historical Price Charts":
+    st.header("Historical Price Charts")
     if not portfolio_df.empty:
         selected_ticker = st.selectbox("Select a Ticker for Historical Chart", options=portfolio_df['Ticker'].tolist(), key="hist_ticker")
         period = st.selectbox("Time Period", options=['6mo', '1y', '2y', '5y', 'max'], key="hist_period")
@@ -1249,12 +1285,20 @@ elif page == " Historical Price Charts":
             if not hist_data.empty:
                 avg_purchase = portfolio_df[portfolio_df['Ticker'] == selected_ticker]['Average Purchase Price'].iloc[0]
 
-                fig = px.line(hist_data, x='Date', y='Close', title=f"{selected_ticker} Price History ({period})",
-                              labels={'Close': 'Price (EUR)', 'Date': 'Date'})
-                fig.add_hline(y=avg_purchase, line_dash="dash", line_color="red",
-                              annotation_text=f"Avg Purchase: €{avg_purchase:.2f}", annotation_position="top left")
-                fig.update_layout(xaxis_title="Date", yaxis_title="Price (EUR)", hovermode='x unified',
-                                  font=dict(size=12), plot_bgcolor='rgba(0,0,0,0)', paper_bgcolor='rgba(0,0,0,0)')
+                fig = px.line(hist_data, x='Date', y='Close', title=f"{selected_ticker} — {period}",
+                              labels={'Close': 'Price (EUR)', 'Date': 'Date'},
+                              color_discrete_sequence=["#c9a84c"])
+                fig.add_hline(y=avg_purchase, line_dash="dash", line_color="#f85149",
+                              annotation_text=f"Avg: €{avg_purchase:.2f}", annotation_position="top left",
+                              annotation_font=dict(color="#f85149", size=11))
+                fig.update_traces(line=dict(width=2))
+                fig.update_layout(xaxis_title="", yaxis_title="Price (EUR)", hovermode='x unified',
+                                  font=dict(size=12, color="#8b949e"),
+                                  title=dict(font=dict(color="#e6edf3", size=14), x=0),
+                                  plot_bgcolor='#0d1117', paper_bgcolor='#0d1117',
+                                  xaxis=dict(gridcolor="#21262d", linecolor="#30363d", tickfont=dict(color="#8b949e")),
+                                  yaxis=dict(gridcolor="#21262d", linecolor="#30363d", tickfont=dict(color="#8b949e")),
+                                  margin=dict(l=0, r=0, t=40, b=0))
                 st.plotly_chart(fig, use_container_width=True)
 
                 col1, col2, col3 = st.columns(3)
