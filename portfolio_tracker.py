@@ -10,223 +10,229 @@ from datetime import datetime, timedelta, time, date
 # -------------------------
 st.markdown("""
 <style>
-    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
+    @import url('https://fonts.googleapis.com/css2?family=Ropa+Sans&family=Inter:wght@300;400;500;600;700&display=swap');
+
+    /* ═══════════════════════════════════════════
+       BRAND TOKENS
+       Navy   #080c18  #0c1120  #101828  #192138
+       Gold   #c9a84c  rgba(201,168,76,x)
+       Cream  #f0ece0  #a8a49a  #5c5a54
+       Green  #27ae7a  Red  #c94c4c
+       Radius buttons: 4px  cards/inputs: 6px
+    ═══════════════════════════════════════════ */
 
     html, body, .stApp, .main {
         font-family: 'Inter', sans-serif !important;
-        background-color: #0b0f19 !important;
-        color: #e2e8f0 !important;
+        background-color: #080c18 !important;
+        color: #f0ece0 !important;
     }
 
     .main .block-container {
-        padding-top: 1.5rem !important;
+        padding-top: 0 !important;
         padding-left: 1.5rem !important;
         padding-right: 1.5rem !important;
-        max-width: 1200px !important;
+        max-width: 1280px !important;
     }
 
     /* ── Typography ── */
+    h1, h2, h3, h4 { font-family: 'Ropa Sans', sans-serif !important; }
+
     h1 {
-        color: #f1f5f9 !important;
-        font-weight: 700 !important;
-        font-size: 1.5rem !important;
-        letter-spacing: -0.03em !important;
-        margin-bottom: 0.25rem !important;
+        color: #f0ece0 !important;
+        font-size: 1.8rem !important;
+        font-weight: 400 !important;
+        letter-spacing: 0.04em !important;
+        margin-bottom: 0 !important;
         border: none !important;
     }
 
     h2 {
-        color: #f1f5f9 !important;
-        font-weight: 600 !important;
-        font-size: 1.15rem !important;
-        letter-spacing: -0.01em !important;
+        color: #f0ece0 !important;
+        font-size: 1.1rem !important;
+        font-weight: 400 !important;
+        letter-spacing: 0.05em !important;
         -webkit-text-fill-color: unset !important;
         background: none !important;
-        margin-bottom: 1rem !important;
+        margin-bottom: 0.75rem !important;
     }
 
     h3 {
-        color: #94a3b8 !important;
-        font-weight: 500 !important;
-        font-size: 0.8rem !important;
+        color: #a8a49a !important;
+        font-size: 0.72rem !important;
+        font-weight: 400 !important;
         text-transform: uppercase !important;
-        letter-spacing: 0.08em !important;
+        letter-spacing: 0.14em !important;
     }
 
     /* ── Sidebar ── */
     [data-testid="stSidebar"] {
-        background-color: #0f1623 !important;
-        border-right: 1px solid #1e293b !important;
+        background-color: #0a0d1a !important;
+        border-right: 1px solid #192138 !important;
     }
 
-    [data-testid="stSidebar"] [data-testid="stMarkdownContainer"] p {
-        color: #94a3b8 !important;
-        font-size: 0.75rem !important;
-        text-transform: uppercase !important;
-        letter-spacing: 0.1em !important;
-        font-weight: 600 !important;
-    }
-
-    /* Sidebar expanders as clean sections */
     [data-testid="stSidebar"] .st-expander {
-        background-color: #131c2e !important;
-        border: 1px solid #1e293b !important;
-        border-radius: 10px !important;
-        margin-bottom: 0.5rem !important;
+        background-color: #0c1120 !important;
+        border: 1px solid #192138 !important;
+        border-radius: 6px !important;
+        margin-bottom: 0.4rem !important;
         box-shadow: none !important;
+        transition: border-color 0.15s !important;
     }
 
     [data-testid="stSidebar"] .st-expander:hover {
-        border-color: #3b82f6 !important;
+        border-color: rgba(201,168,76,0.4) !important;
         transform: none !important;
         box-shadow: none !important;
     }
 
-    /* ── Top Navigation Tabs ── */
+    /* ── Navigation Tabs ── */
     .stTabs [data-baseweb="tab-list"] {
-        background-color: #0f1623 !important;
-        border-bottom: 1px solid #1e293b !important;
+        background-color: #080c18 !important;
+        border-bottom: 1px solid #192138 !important;
         gap: 0 !important;
-        padding: 0 0.5rem !important;
+        padding: 0 !important;
     }
 
     .stTabs [role="tab"] {
         background: transparent !important;
         border: none !important;
-        border-bottom: 3px solid transparent !important;
+        border-bottom: 2px solid transparent !important;
         border-radius: 0 !important;
-        color: #64748b !important;
+        color: #5c5a54 !important;
+        font-family: 'Inter', sans-serif !important;
         font-weight: 500 !important;
-        font-size: 0.85rem !important;
-        padding: 0.85rem 1.25rem !important;
+        font-size: 0.78rem !important;
+        letter-spacing: 0.07em !important;
+        text-transform: uppercase !important;
+        padding: 0.9rem 1.3rem !important;
         transition: color 0.15s !important;
         box-shadow: none !important;
-        letter-spacing: 0.01em !important;
     }
 
     .stTabs [role="tab"]:hover {
-        color: #cbd5e1 !important;
-        background: rgba(59,130,246,0.05) !important;
+        color: #a8a49a !important;
+        background: rgba(201,168,76,0.03) !important;
         transform: none !important;
         box-shadow: none !important;
     }
 
     .stTabs [aria-selected="true"] {
-        color: #f1f5f9 !important;
-        border-bottom: 3px solid #3b82f6 !important;
+        color: #c9a84c !important;
+        border-bottom: 2px solid #c9a84c !important;
         background: transparent !important;
         font-weight: 600 !important;
     }
 
-    /* ── Buttons ── */
+    /* ── Buttons — 4px radius, gold on hover ── */
     .stButton > button {
-        background-color: #1e293b !important;
-        color: #e2e8f0 !important;
-        border: 1px solid #334155 !important;
-        border-radius: 8px !important;
+        background-color: transparent !important;
+        color: #a8a49a !important;
+        border: 1px solid #1f2d4a !important;
+        border-radius: 4px !important;
+        font-family: 'Inter', sans-serif !important;
         font-weight: 500 !important;
-        font-size: 0.85rem !important;
-        padding: 0.5rem 1.2rem !important;
+        font-size: 0.75rem !important;
+        letter-spacing: 0.06em !important;
+        text-transform: uppercase !important;
+        padding: 0.42rem 0.9rem !important;
         box-shadow: none !important;
         transition: all 0.15s !important;
-        letter-spacing: 0.01em !important;
     }
 
     .stButton > button:hover {
-        background-color: #253347 !important;
-        border-color: #3b82f6 !important;
-        color: #f1f5f9 !important;
+        background-color: rgba(201,168,76,0.08) !important;
+        border-color: #c9a84c !important;
+        color: #c9a84c !important;
         transform: none !important;
-        box-shadow: 0 0 0 1px rgba(59,130,246,0.3) !important;
+        box-shadow: none !important;
     }
 
-    /* ── Metric cards ── */
+    /* ── Metric Cards — 6px radius ── */
     [data-testid="stMetric"] {
-        background: linear-gradient(135deg, #131c2e 0%, #0f1623 100%) !important;
-        border: 1px solid #1e293b !important;
-        border-radius: 12px !important;
-        padding: 1.25rem 1.5rem !important;
-        box-shadow: 0 1px 3px rgba(0,0,0,0.4) !important;
+        background-color: #0c1120 !important;
+        border: 1px solid #192138 !important;
+        border-left: 3px solid #c9a84c !important;
+        border-radius: 6px !important;
+        padding: 1.1rem 1.3rem !important;
+        box-shadow: none !important;
     }
 
     [data-testid="stMetricLabel"] p {
-        color: #64748b !important;
-        font-size: 0.68rem !important;
+        color: #5c5a54 !important;
+        font-family: 'Inter', sans-serif !important;
+        font-size: 0.63rem !important;
         font-weight: 600 !important;
         text-transform: uppercase !important;
-        letter-spacing: 0.08em !important;
+        letter-spacing: 0.11em !important;
     }
 
     [data-testid="stMetricValue"] {
-        color: #f1f5f9 !important;
-        font-size: 1.5rem !important;
-        font-weight: 700 !important;
-        letter-spacing: -0.02em !important;
+        color: #f0ece0 !important;
+        font-family: 'Ropa Sans', sans-serif !important;
+        font-size: 1.55rem !important;
+        font-weight: 400 !important;
+        letter-spacing: 0.02em !important;
     }
 
     [data-testid="stMetricDelta"] {
-        font-size: 0.8rem !important;
+        font-size: 0.78rem !important;
         font-weight: 500 !important;
     }
 
-    /* ── Inputs ── */
+    /* ── Inputs — 6px radius ── */
     .stTextInput > div > div > input,
     .stNumberInput > div > div > input,
     .stDateInput > div > div > input {
-        background-color: #0b0f19 !important;
-        border: 1px solid #1e293b !important;
-        border-radius: 8px !important;
-        color: #e2e8f0 !important;
-        font-size: 0.875rem !important;
+        background-color: #080c18 !important;
+        border: 1px solid #192138 !important;
+        border-radius: 6px !important;
+        color: #f0ece0 !important;
+        font-family: 'Inter', sans-serif !important;
+        font-size: 0.85rem !important;
     }
 
     .stTextInput > div > div > input:focus,
     .stNumberInput > div > div > input:focus {
-        border-color: #3b82f6 !important;
-        box-shadow: 0 0 0 2px rgba(59,130,246,0.2) !important;
+        border-color: #c9a84c !important;
+        box-shadow: 0 0 0 2px rgba(201,168,76,0.15) !important;
         transform: none !important;
     }
 
     .stSelectbox > div > div {
-        background-color: #0b0f19 !important;
-        border: 1px solid #1e293b !important;
-        border-radius: 8px !important;
-        color: #e2e8f0 !important;
+        background-color: #080c18 !important;
+        border: 1px solid #192138 !important;
+        border-radius: 6px !important;
+        color: #f0ece0 !important;
     }
 
-    /* ── DataFrames ── */
+    /* ── DataFrames — 6px radius ── */
     .stDataFrame {
-        border: 1px solid #1e293b !important;
-        border-radius: 10px !important;
+        border: 1px solid #192138 !important;
+        border-radius: 6px !important;
         overflow: hidden !important;
         box-shadow: none !important;
     }
-
     .stDataFrame:hover { box-shadow: none !important; }
 
     /* ── Misc ── */
     .stCaption {
-        color: #475569 !important;
-        font-size: 0.75rem !important;
+        color: #5c5a54 !important;
+        font-size: 0.72rem !important;
         font-style: normal !important;
     }
+    hr { border-color: #192138 !important; }
+    .stAlert { border-radius: 6px !important; box-shadow: none !important; }
 
-    hr { border-color: #1e293b !important; }
-
-    .stAlert { border-radius: 8px !important; box-shadow: none !important; }
-
-    /* ── Mobile responsive ── */
+    /* ── Mobile ── */
     @media (max-width: 768px) {
         .main .block-container {
             padding-left: 0.75rem !important;
             padding-right: 0.75rem !important;
         }
-        [data-testid="stMetricValue"] {
-            font-size: 1.2rem !important;
-        }
+        [data-testid="stMetricValue"] { font-size: 1.2rem !important; }
         .stTabs [role="tab"] {
-            font-size: 0.75rem !important;
-            padding: 0.7rem 0.6rem !important;
+            font-size: 0.66rem !important;
+            padding: 0.7rem 0.55rem !important;
         }
     }
 </style>
@@ -442,15 +448,18 @@ if "logged_in" not in st.session_state:
     st.session_state.logged_in = False
 
 if not st.session_state.logged_in:
-    col1, col2, col3 = st.columns([1, 1.2, 1])
+    col1, col2, col3 = st.columns([1, 1.1, 1])
     with col2:
-        st.markdown("<br><br>", unsafe_allow_html=True)
-        st.markdown(
-            "<h1 style='text-align:center; border:none; font-size:1.4rem; letter-spacing:0.05em; color:#8b949e; text-transform:uppercase; font-weight:400;'>Portfolio Tracker</h1>",
-            unsafe_allow_html=True
-        )
-        st.markdown("<div style='border-top:1px solid #21262d; margin:1.5rem 0;'></div>", unsafe_allow_html=True)
-        password = st.text_input("Password", type="password", label_visibility="collapsed", placeholder="Enter password")
+        st.markdown("<br><br><br>", unsafe_allow_html=True)
+        st.markdown("""
+        <div style='text-align:center; margin-bottom:2.5rem;'>
+            <div style='font-family:"Ropa Sans",sans-serif; font-size:2rem; letter-spacing:0.12em; color:#f0ece0; font-weight:400;'>PORTFOLIO</div>
+            <div style='width:40px; height:2px; background:#c9a84c; margin:0.5rem auto 0;'></div>
+            <div style='font-family:"Inter",sans-serif; font-size:0.65rem; letter-spacing:0.22em; color:#5c5a54; text-transform:uppercase; margin-top:0.6rem;'>Wealth Dashboard</div>
+        </div>
+        """, unsafe_allow_html=True)
+        password = st.text_input("Password", type="password", label_visibility="collapsed", placeholder="Password")
+        st.markdown("<div style='height:0.5rem;'></div>", unsafe_allow_html=True)
         if st.button("Sign In", use_container_width=True):
             if password == st.secrets["auth"]["password"]:
                 st.session_state.logged_in = True
@@ -484,9 +493,10 @@ if "cashflow" not in st.session_state:
 # Sidebar - Balances
 # -------------------------
 st.sidebar.markdown("""
-<div style='padding:1rem 0 0.5rem 0;'>
-    <div style='font-size:0.65rem; letter-spacing:0.12em; text-transform:uppercase; color:#475569; font-weight:600;'>Portfolio Tracker</div>
-    <div style='height:2px; background:linear-gradient(90deg,#3b82f6,#6366f1); border-radius:1px; margin-top:0.4rem;'></div>
+<div style='padding:1.25rem 0 1rem 0;'>
+    <div style='font-family:"Ropa Sans",sans-serif; font-size:1.1rem; letter-spacing:0.1em; color:#f0ece0;'>PORTFOLIO</div>
+    <div style='width:32px; height:2px; background:#c9a84c; margin-top:0.35rem; margin-bottom:0.4rem;'></div>
+    <div style='font-family:"Inter",sans-serif; font-size:0.6rem; letter-spacing:0.18em; color:#5c5a54; text-transform:uppercase;'>Wealth Dashboard</div>
 </div>
 """, unsafe_allow_html=True)
 
@@ -934,19 +944,47 @@ def compute_portfolio(transactions_df=None, cash_balance_local=None):
 
 portfolio_df, realized, unrealized, total_profit, profit_percentage = compute_portfolio()
 
-# -------------------------
-# Header row
-# -------------------------
-col_title, col_refresh = st.columns([6, 1])
-with col_title:
-    st.title("Portfolio Tracker")
-with col_refresh:
-    st.markdown("<br>", unsafe_allow_html=True)
+# ─── Compute header stats ───
+_total_assets = portfolio_df["Value"].sum() if not portfolio_df.empty else 0.0
+_cash = st.session_state.balances.get("cash_balance", 0.0)
+_credit = st.session_state.balances.get("credit_mutuel_balance", 0.0)
+_cic = st.session_state.balances.get("cic_balance", 0.0)
+_total_value = _total_assets + _cash + _credit + _cic
+_profit_color = "#27ae7a" if total_profit >= 0 else "#c94c4c"
+_profit_sign  = "+" if total_profit >= 0 else ""
+_pct_sign     = "+" if profit_percentage >= 0 else ""
+_today_str    = datetime.today().strftime("%d %b %Y").upper()
+
+st.markdown(f"""
+<div style='background:#0c1120; border-bottom:1px solid #192138; padding:1.4rem 1.5rem 1.2rem; margin:-0 -1.5rem 0; display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:1rem;'>
+    <div>
+        <div style='font-family:"Ropa Sans",sans-serif; font-size:1.6rem; letter-spacing:0.08em; color:#f0ece0; line-height:1;'>PORTFOLIO</div>
+        <div style='width:36px; height:2px; background:#c9a84c; margin:0.4rem 0 0.3rem;'></div>
+        <div style='font-family:"Inter",sans-serif; font-size:0.6rem; letter-spacing:0.2em; color:#5c5a54; text-transform:uppercase;'>{_today_str}</div>
+    </div>
+    <div style='display:flex; gap:2.5rem; flex-wrap:wrap;'>
+        <div style='text-align:right;'>
+            <div style='font-family:"Inter",sans-serif; font-size:0.6rem; letter-spacing:0.14em; color:#5c5a54; text-transform:uppercase; margin-bottom:0.25rem;'>Total Value</div>
+            <div style='font-family:"Ropa Sans",sans-serif; font-size:1.5rem; color:#f0ece0; letter-spacing:0.03em;'>€{_total_value:,.0f}</div>
+        </div>
+        <div style='text-align:right;'>
+            <div style='font-family:"Inter",sans-serif; font-size:0.6rem; letter-spacing:0.14em; color:#5c5a54; text-transform:uppercase; margin-bottom:0.25rem;'>Total P&L</div>
+            <div style='font-family:"Ropa Sans",sans-serif; font-size:1.5rem; color:{_profit_color}; letter-spacing:0.03em;'>{_profit_sign}€{total_profit:,.0f}</div>
+        </div>
+        <div style='text-align:right;'>
+            <div style='font-family:"Inter",sans-serif; font-size:0.6rem; letter-spacing:0.14em; color:#5c5a54; text-transform:uppercase; margin-bottom:0.25rem;'>Return</div>
+            <div style='font-family:"Ropa Sans",sans-serif; font-size:1.5rem; color:{_profit_color}; letter-spacing:0.03em;'>{_pct_sign}{profit_percentage:.1f}%</div>
+        </div>
+    </div>
+</div>
+<div style='height:3px; background:linear-gradient(90deg,#c9a84c 0%,rgba(201,168,76,0.15) 60%,transparent 100%);'></div>
+""", unsafe_allow_html=True)
+
+col_refresh_btn = st.columns([8, 1])[1]
+with col_refresh_btn:
     if st.button("Refresh", use_container_width=True):
         st.cache_data.clear()
         st.rerun()
-
-st.markdown("<div style='height:4px; background:linear-gradient(90deg,#3b82f6,#6366f1,#8b5cf6); border-radius:2px; margin-bottom:1.5rem;'></div>", unsafe_allow_html=True)
 
 # -------------------------
 # Navigation tabs
@@ -974,20 +1012,23 @@ with tab_cashflow:
         net_cashflow = total_income + total_expenses
         net_color = "green" if net_cashflow >= 0 else "red"
 
-        st.markdown(
-            f"""
-            <div style="text-align:center; font-size:0.85rem; font-weight:500; letter-spacing:0.05em; text-transform:uppercase; color:#8b949e; line-height:2.5;">
-                Total Income: <span style="color:#3fb950; font-size:1.1rem; font-weight:600;">€{total_income:,.2f}</span>
-                &nbsp;&nbsp;&nbsp;|&nbsp;&nbsp;&nbsp;
-                Total Expenses: <span style="color:#f85149; font-size:1.1rem; font-weight:600;">€{abs(total_expenses):,.2f}</span>
+        _net_col = "#27ae7a" if net_cashflow >= 0 else "#c94c4c"
+        st.markdown(f"""
+        <div style='display:flex; gap:1.5rem; flex-wrap:wrap; margin-bottom:1.5rem;'>
+            <div style='flex:1; min-width:160px; background:#0c1120; border:1px solid #192138; border-left:3px solid #27ae7a; border-radius:6px; padding:1rem 1.2rem;'>
+                <div style='font-family:"Inter",sans-serif; font-size:0.6rem; letter-spacing:0.12em; text-transform:uppercase; color:#5c5a54; margin-bottom:0.3rem;'>Total Income</div>
+                <div style='font-family:"Ropa Sans",sans-serif; font-size:1.4rem; color:#27ae7a; letter-spacing:0.03em;'>€{total_income:,.2f}</div>
             </div>
-            <div style="text-align:center; font-size:0.75rem; font-weight:500; letter-spacing:0.08em; text-transform:uppercase; color:#8b949e; margin-top:0.5rem;">
-                Net Monthly Cashflow &nbsp;
-                <span style="color:{net_color}; font-size:1.6rem; font-weight:700; letter-spacing:-0.02em;">€{net_cashflow:,.2f}</span>
+            <div style='flex:1; min-width:160px; background:#0c1120; border:1px solid #192138; border-left:3px solid #c94c4c; border-radius:6px; padding:1rem 1.2rem;'>
+                <div style='font-family:"Inter",sans-serif; font-size:0.6rem; letter-spacing:0.12em; text-transform:uppercase; color:#5c5a54; margin-bottom:0.3rem;'>Total Expenses</div>
+                <div style='font-family:"Ropa Sans",sans-serif; font-size:1.4rem; color:#c94c4c; letter-spacing:0.03em;'>€{abs(total_expenses):,.2f}</div>
             </div>
-            """,
-            unsafe_allow_html=True
-        )
+            <div style='flex:1; min-width:160px; background:#0c1120; border:1px solid #192138; border-left:3px solid #c9a84c; border-radius:6px; padding:1rem 1.2rem;'>
+                <div style='font-family:"Inter",sans-serif; font-size:0.6rem; letter-spacing:0.12em; text-transform:uppercase; color:#5c5a54; margin-bottom:0.3rem;'>Net Monthly</div>
+                <div style='font-family:"Ropa Sans",sans-serif; font-size:1.4rem; color:{_net_col}; letter-spacing:0.03em;'>€{net_cashflow:,.2f}</div>
+            </div>
+        </div>
+        """, unsafe_allow_html=True)
 
         st.markdown("---")
 
@@ -1077,25 +1118,31 @@ with tab_history:
             "no_investment_value": "No Investment (€)"
         })
 
+        _CHART_LAYOUT = dict(
+            plot_bgcolor="#080c18",
+            paper_bgcolor="#080c18",
+            font=dict(family="Inter", color="#5c5a54", size=11),
+            xaxis=dict(gridcolor="#192138", linecolor="#192138", tickfont=dict(color="#5c5a54"), zeroline=False),
+            yaxis=dict(gridcolor="#192138", linecolor="#192138", tickfont=dict(color="#5c5a54"), zeroline=False),
+            margin=dict(l=10, r=10, t=50, b=10),
+            hovermode="x unified",
+            hoverlabel=dict(bgcolor="#0c1120", bordercolor="#192138", font=dict(family="Inter", color="#f0ece0", size=12)),
+            legend=dict(orientation="h", yanchor="bottom", y=1.04, xanchor="left", x=0,
+                        font=dict(family="Inter", color="#a8a49a", size=11), bgcolor="rgba(0,0,0,0)", borderwidth=0),
+        )
+
         fig_total = px.line(
             plot_df,
             x="Date",
             y=["Total Portfolio Value (€)", "No Investment (€)"],
-            title="Portfolio Value vs. No Investment",
-            labels={"Date": "Date", "value": "Value (€)", "variable": ""},
-            color_discrete_sequence=["#3b82f6", "#6366f1"],
+            labels={"Date": "", "value": "Value (€)", "variable": ""},
+            color_discrete_sequence=["#c9a84c", "#a8a49a"],
         )
         fig_total.update_traces(mode="lines", line=dict(width=2))
+        fig_total.update_traces(selector=dict(name="Total Portfolio Value (€)"), line=dict(width=2.5))
         fig_total.update_layout(
-            hovermode="x unified",
-            plot_bgcolor="#0b0f19",
-            paper_bgcolor="#0b0f19",
-            font=dict(color="#64748b", size=12),
-            title=dict(font=dict(color="#f1f5f9", size=14), x=0),
-            legend=dict(title="", orientation="h", yanchor="bottom", y=1.02, xanchor="left", x=0, font=dict(color="#94a3b8")),
-            xaxis=dict(gridcolor="#1e293b", linecolor="#1e293b", tickfont=dict(color="#64748b")),
-            yaxis=dict(gridcolor="#1e293b", linecolor="#1e293b", tickfont=dict(color="#64748b")),
-            margin=dict(l=0, r=0, t=40, b=0),
+            title=dict(text="Portfolio Value vs. No Investment", font=dict(family="Ropa Sans", color="#f0ece0", size=15), x=0),
+            **_CHART_LAYOUT
         )
         st.plotly_chart(fig_total, use_container_width=True)
 
@@ -1108,9 +1155,11 @@ with tab_history:
         col1.metric("Current Portfolio Value", f"€{latest:,.2f}")
         col2.metric("No Investment (Cash Equivalent)", f"€{baseline:,.2f}")
 
+        _delta_col = "#27ae7a" if delta_vs_baseline >= 0 else "#c94c4c"
+        _delta_sign = "+" if delta_vs_baseline >= 0 else ""
         st.markdown(
-            f"<div style='text-align:center; margin:1rem 0; font-size:0.75rem; text-transform:uppercase; letter-spacing:0.06em; color:#8b949e;'>vs. No Investment &nbsp;"
-            f"<span style='color:{'#3fb950' if delta_vs_baseline >= 0 else '#f85149'}; font-size:1.3rem; font-weight:600; letter-spacing:-0.01em;'>{'+'if delta_vs_baseline>=0 else ''}€{delta_vs_baseline:,.2f} ({pct_vs_baseline:.2f}%)</span></div>",
+            f"<div style='font-family:Inter; font-size:0.62rem; text-transform:uppercase; letter-spacing:0.12em; color:#5c5a54; margin:0.75rem 0 0.25rem;'>vs. No Investment &nbsp;"
+            f"<span style='color:{_delta_col}; font-family:\"Ropa Sans\"; font-size:1.2rem; font-weight:400; letter-spacing:0.03em;'>{_delta_sign}€{delta_vs_baseline:,.2f} ({pct_vs_baseline:.2f}%)</span></div>",
             unsafe_allow_html=True,
         )
 
@@ -1135,14 +1184,14 @@ with tab_history:
 
         st.markdown(
             f"""
-            <div style="text-align:center; padding:1.5rem; background:#161b22; border:1px solid #21262d; border-radius:8px;">
-                <div style="font-size:0.75rem; text-transform:uppercase; letter-spacing:0.06em; color:#8b949e;">
+            <div style="background:#0c1120; border:1px solid #192138; border-left:3px solid #c9a84c; border-radius:6px; padding:1.2rem 1.4rem;">
+                <div style="font-family:Inter; font-size:0.6rem; text-transform:uppercase; letter-spacing:0.14em; color:#5c5a54; margin-bottom:0.4rem;">
                     At {bank_interest_rate:.2f}% annual interest
                 </div>
-                <div style="font-size:1.6rem; font-weight:600; color:#3fb950; margin:0.5rem 0;">
+                <div style="font-family:'Ropa Sans'; font-size:1.6rem; color:#27ae7a; letter-spacing:0.03em; margin-bottom:0.2rem;">
                     €{total_with_interest:,.2f}
                 </div>
-                <div style="font-size:0.85rem; color:#8b949e;">Interest gain: +€{interest_gain:,.2f}</div>
+                <div style="font-family:Inter; font-size:0.78rem; color:#5c5a54;">Interest gain: +€{interest_gain:,.2f}</div>
             </div>
             """,
             unsafe_allow_html=True
@@ -1227,7 +1276,7 @@ with tab_overview:
 # -------------------------
 with tab_allocation:
     st.header("Asset Allocation")
-    custom_colors = ['#3b82f6', '#6366f1', '#22c55e', '#f59e0b', '#ef4444', '#8b5cf6']
+    custom_colors = ['#c9a84c', '#a8a49a', '#27ae7a', '#d4b86a', '#c94c4c', '#7a9fc4']
 
     allocation_rows = []
 
@@ -1289,12 +1338,13 @@ with tab_allocation:
             fig.update_traces(textposition="inside", textinfo="percent+label", hovertemplate="%{label}: €%{value:,.2f} (%{percent})")
             fig.update_layout(
                 showlegend=True,
-                legend=dict(orientation="h", yanchor="top", y=-0.18, xanchor="center", x=0.5, font=dict(color="#8b949e")),
-                margin=dict(l=20, r=20, t=40, b=80),
-                font=dict(size=12, color="#8b949e"),
-                paper_bgcolor="#0b0f19",
-                plot_bgcolor="#0b0f19",
-                title=dict(font=dict(color="#f1f5f9", size=14), x=0),
+                legend=dict(orientation="h", yanchor="top", y=-0.16, xanchor="center", x=0.5,
+                            font=dict(family="Inter", color="#a8a49a", size=11), bgcolor="rgba(0,0,0,0)"),
+                margin=dict(l=10, r=10, t=40, b=90),
+                font=dict(family="Inter", size=12, color="#5c5a54"),
+                paper_bgcolor="#080c18",
+                plot_bgcolor="#080c18",
+                title=dict(text="Asset Allocation", font=dict(family="Ropa Sans", color="#f0ece0", size=15), x=0),
                 width=None,
                 height=520
             )
@@ -1305,24 +1355,24 @@ with tab_allocation:
                 f"""
                 <div style="height:520px; display:flex; align-items:center; justify-content:center;">
                     <div style="width:100%; padding-left:12px;">
-                        <div style="font-size:0.65rem; text-transform:uppercase; letter-spacing:0.1em; color:#475569; font-weight:600; margin-bottom:1.25rem;">Breakdown</div>
-                        <div style="font-size:0.9rem; line-height:2.4;">
-                            <div style="display:flex; justify-content:space-between; border-bottom:1px solid #1e293b; padding-bottom:0.4rem;">
-                                <span style="color:#94a3b8;">Crypto</span>
-                                <span style="color:#f1f5f9; font-weight:600;">{pct_crypto:.1f}%</span>
+                        <div style="font-family:Inter; font-size:0.6rem; text-transform:uppercase; letter-spacing:0.14em; color:#5c5a54; font-weight:600; margin-bottom:1.2rem;">Breakdown</div>
+                        <div style="font-family:Inter; font-size:0.85rem; line-height:1;">
+                            <div style="display:flex; justify-content:space-between; align-items:center; border-bottom:1px solid #192138; padding:0.65rem 0;">
+                                <span style="color:#a8a49a;">Crypto</span>
+                                <span style="font-family:'Ropa Sans'; font-size:1rem; color:#f0ece0;">{pct_crypto:.1f}%</span>
                             </div>
-                            <div style="display:flex; justify-content:space-between; border-bottom:1px solid #1e293b; padding-bottom:0.4rem;">
-                                <span style="color:#94a3b8;">Stocks / ETF</span>
-                                <span style="color:#f1f5f9; font-weight:600;">{pct_stocks:.1f}%</span>
+                            <div style="display:flex; justify-content:space-between; align-items:center; border-bottom:1px solid #192138; padding:0.65rem 0;">
+                                <span style="color:#a8a49a;">Stocks / ETF</span>
+                                <span style="font-family:'Ropa Sans'; font-size:1rem; color:#f0ece0;">{pct_stocks:.1f}%</span>
                             </div>
-                            <div style="display:flex; justify-content:space-between; padding-bottom:0.4rem;">
-                                <span style="color:#94a3b8;">Cash & Banks</span>
-                                <span style="color:#f1f5f9; font-weight:600;">{pct_cash:.1f}%</span>
+                            <div style="display:flex; justify-content:space-between; align-items:center; padding:0.65rem 0;">
+                                <span style="color:#a8a49a;">Cash & Banks</span>
+                                <span style="font-family:'Ropa Sans'; font-size:1rem; color:#f0ece0;">{pct_cash:.1f}%</span>
                             </div>
                         </div>
-                        <div style="margin-top:1rem; padding-top:0.75rem; border-top:1px solid #1e293b;">
-                            <div style="font-size:0.65rem; text-transform:uppercase; letter-spacing:0.1em; color:#475569; font-weight:600;">Total</div>
-                            <div style="font-size:1.3rem; font-weight:700; color:#f1f5f9; letter-spacing:-0.02em;">€{total_value:,.2f}</div>
+                        <div style="margin-top:1rem; padding-top:0.8rem; border-top:1px solid #c9a84c; border-top-width:1px;">
+                            <div style="font-family:Inter; font-size:0.6rem; text-transform:uppercase; letter-spacing:0.14em; color:#5c5a54; margin-bottom:0.3rem;">Total Net Worth</div>
+                            <div style="font-family:'Ropa Sans'; font-size:1.5rem; color:#c9a84c; letter-spacing:0.03em;">€{total_value:,.2f}</div>
                         </div>
                     </div>
                 </div>
@@ -1347,19 +1397,18 @@ with tab_charts:
                 avg_purchase = portfolio_df[portfolio_df['Ticker'] == selected_ticker]['Average Purchase Price'].iloc[0]
 
                 fig = px.line(hist_data, x='Date', y='Close', title=f"{selected_ticker} — {period}",
-                              labels={'Close': 'Price (EUR)', 'Date': 'Date'},
-                              color_discrete_sequence=["#3b82f6"])
-                fig.add_hline(y=avg_purchase, line_dash="dash", line_color="#f85149",
-                              annotation_text=f"Avg: €{avg_purchase:.2f}", annotation_position="top left",
-                              annotation_font=dict(color="#f85149", size=11))
-                fig.update_traces(line=dict(width=2))
-                fig.update_layout(xaxis_title="", yaxis_title="Price (EUR)", hovermode='x unified',
-                                  font=dict(size=12, color="#64748b"),
-                                  title=dict(font=dict(color="#f1f5f9", size=14), x=0),
-                                  plot_bgcolor='#0b0f19', paper_bgcolor='#0b0f19',
-                                  xaxis=dict(gridcolor="#1e293b", linecolor="#1e293b", tickfont=dict(color="#64748b")),
-                                  yaxis=dict(gridcolor="#1e293b", linecolor="#1e293b", tickfont=dict(color="#64748b")),
-                                  margin=dict(l=0, r=0, t=40, b=0))
+                              labels={'Close': 'Price (EUR)', 'Date': ''},
+                              color_discrete_sequence=["#c9a84c"])
+                fig.update_traces(line=dict(width=2.5))
+                fig.add_hline(y=avg_purchase, line_dash="dash", line_color="rgba(201,168,76,0.5)",
+                              annotation_text=f"Avg: €{avg_purchase:.2f}",
+                              annotation_position="top left",
+                              annotation_font=dict(family="Inter", color="#c9a84c", size=11))
+                fig.update_layout(
+                    title=dict(font=dict(family="Ropa Sans", color="#f0ece0", size=15), x=0),
+                    xaxis_title="", yaxis_title="Price (EUR)",
+                    **_CHART_LAYOUT
+                )
                 st.plotly_chart(fig, use_container_width=True)
 
                 col1, col2, col3 = st.columns(3)
