@@ -1354,11 +1354,9 @@ with tab_charts:
                               annotation_font=dict(color="#f85149", size=11))
                 fig.update_traces(line=dict(width=2))
                 fig.update_layout(xaxis_title="", yaxis_title="Price (EUR)", hovermode='x unified',
-                                  font=dict(size=12, color="#8b949e"),
-                                  title=dict(font=dict(color="#e6edf3", size=14), x=0),
-                                  plot_bgcolor='#0b0f19', paper_bgcolor='#0b0f19',
-                                  font=dict(color="#64748b"),
+                                  font=dict(size=12, color="#64748b"),
                                   title=dict(font=dict(color="#f1f5f9", size=14), x=0),
+                                  plot_bgcolor='#0b0f19', paper_bgcolor='#0b0f19',
                                   xaxis=dict(gridcolor="#1e293b", linecolor="#1e293b", tickfont=dict(color="#64748b")),
                                   yaxis=dict(gridcolor="#1e293b", linecolor="#1e293b", tickfont=dict(color="#64748b")),
                                   margin=dict(l=0, r=0, t=40, b=0))
