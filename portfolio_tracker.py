@@ -372,6 +372,27 @@ def delete_cashflow_db(cf_id):
         return False
 
 # -------------------------
+# Login
+# -------------------------
+if "logged_in" not in st.session_state:
+    st.session_state.logged_in = False
+
+if not st.session_state.logged_in:
+    st.title("Portfolio Tracker")
+    st.markdown("---")
+    col1, col2, col3 = st.columns([1, 2, 1])
+    with col2:
+        st.subheader("Login")
+        password = st.text_input("Wachtwoord", type="password")
+        if st.button("Inloggen", use_container_width=True):
+            if password == st.secrets["auth"]["password"]:
+                st.session_state.logged_in = True
+                st.rerun()
+            else:
+                st.error("Ongeldig wachtwoord")
+    st.stop()
+
+# -------------------------
 # App title
 # -------------------------
 st.title("Portfolio Tracker Dashboard")
