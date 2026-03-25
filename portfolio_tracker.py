@@ -4,7 +4,8 @@ import yfinance as yf
 import pandas as pd
 import plotly.express as px
 import plotly.graph_objects as go
-from datetime import datetime, timedelta, time, date
+from datetime import datetime, timedelta, time, date, timezone, tzinfo
+from zoneinfo import ZoneInfo
 
 st.set_page_config(page_title="Portfolio Tracker", page_icon="", layout="wide")
 
@@ -559,7 +560,7 @@ if (
     st.session_state.balances['credit_mutuel_balance'] = credit_mutuel_balance_input
     st.session_state.balances['cic_balance'] = cic_balance_input
     save_balances(cash_balance_input, credit_mutuel_balance_input, cic_balance_input)
-    today = datetime.today().date()
+    today = datetime.now(ZoneInfo("Europe/Amsterdam")).date()
     save_balance_history_entry(today, cash_balance_input, credit_mutuel_balance_input, cic_balance_input)
     st.session_state.balances_history = load_balances_history()
     balances_changed = True
@@ -974,7 +975,7 @@ _total_value = _total_assets + _cash + _credit + _cic
 _profit_color = "#27ae7a" if total_profit >= 0 else "#c94c4c"
 _profit_sign  = "+" if total_profit >= 0 else ""
 _pct_sign     = "+" if profit_percentage >= 0 else ""
-_today_str    = date.today().strftime("%d %b %Y").upper()
+_today_str    = datetime.now(ZoneInfo("Europe/Amsterdam")).strftime("%d %b %Y").upper()
 
 st.markdown(f"""
 <div style='background:#0c1120; border-bottom:1px solid #192138; padding:1.4rem 1.5rem 1.2rem; margin:-0 -1.5rem 0; display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:1rem;'>
@@ -1123,7 +1124,7 @@ with tab_history:
 
     no_investment_total = total_invested + bank_total + broker_cash + fees - dividends
 
-    today = datetime.today().date()
+    today = datetime.now(ZoneInfo("Europe/Amsterdam")).date()
     save_portfolio_value_entry(today, total_now, no_investment_total)
 
     pv_hist_df = load_portfolio_value_history()
