@@ -1606,32 +1606,31 @@ with tab_allocation:
             diff_crypto = target_crypto_val - crypto_value
             diff_cash   = target_cash_val   - cash_value
 
-            def _action_html(label, current, target, diff, color):
-                is_cash = label.startswith("Cash")
+            def _rebal_card(col, label, current, target_val, diff, border_color, tgt_pct, is_cash=False):
                 if abs(diff) <= 1:
-                    action = "OK"
+                    action, action_col = "✓  OK", "#5c5a54"
                 elif is_cash:
-                    action = "ADD" if diff > 0 else "WITHDRAW"
+                    action = f"ADD  €{abs(diff):,.0f}" if diff > 0 else f"WITHDRAW  €{abs(diff):,.0f}"
+                    action_col = "#27ae7a" if diff > 0 else "#c94c4c"
                 else:
-                    action = "BUY" if diff > 0 else "SELL"
-                action_col = "#27ae7a" if diff > 0 else ("#c94c4c" if diff < 0 else "#5c5a54")
-                return f"""
-                <div style='background:#0c1120; border:1px solid #192138; border-left:3px solid {color}; border-radius:6px; padding:1rem 1.2rem; flex:1; min-width:180px;'>
-                    <div style='font-family:Inter; font-size:0.6rem; text-transform:uppercase; letter-spacing:0.12em; color:#5c5a54; margin-bottom:0.4rem;'>{label}</div>
-                    <div style='font-family:"Ropa Sans"; font-size:1.1rem; color:#f0ece0; margin-bottom:0.15rem;'>Now: €{current:,.0f} ({current/total_value*100:.1f}%)</div>
-                    <div style='font-family:Inter; font-size:0.78rem; color:#a8a49a; margin-bottom:0.4rem;'>Target: €{target:,.0f} ({tgt_stocks if label.startswith("Stock") else tgt_crypto if label.startswith("Crypto") else tgt_cash:.1f}%)</div>
-                    <div style='font-family:"Ropa Sans"; font-size:1.25rem; color:{action_col};'>
-                        {action} {'€{:,.0f}'.format(abs(diff)) if abs(diff) > 1 else '—'}
-                    </div>
-                </div>"""
+                    action = f"BUY  €{abs(diff):,.0f}" if diff > 0 else f"SELL  €{abs(diff):,.0f}"
+                    action_col = "#27ae7a" if diff > 0 else "#c94c4c"
+                pct_now = current / total_value * 100 if total_value > 0 else 0
+                col.markdown(
+                    f"<div style='background:#0c1120; border:1px solid #192138; border-left:3px solid {border_color}; border-radius:6px; padding:1rem 1.2rem; height:100%;'>"
+                    f"<div style='font-family:Inter; font-size:0.6rem; text-transform:uppercase; letter-spacing:0.12em; color:#5c5a54; margin-bottom:0.4rem;'>{label}</div>"
+                    f"<div style='font-family:Inter; font-size:0.82rem; color:#f0ece0; margin-bottom:0.1rem;'>Now: <b>€{current:,.0f}</b> ({pct_now:.1f}%)</div>"
+                    f"<div style='font-family:Inter; font-size:0.78rem; color:#a8a49a; margin-bottom:0.5rem;'>Target: €{target_val:,.0f} ({tgt_pct:.1f}%)</div>"
+                    f"<div style='font-family:Ropa Sans, sans-serif; font-size:1.3rem; color:{action_col}; letter-spacing:0.03em;'>{action}</div>"
+                    f"</div>",
+                    unsafe_allow_html=True
+                )
 
-            st.markdown(f"""
-            <div style='display:flex; gap:1rem; flex-wrap:wrap; margin-bottom:1.5rem;'>
-                {_action_html("Stocks / ETF", stock_value, target_stocks_val, diff_stocks, "#27ae7a")}
-                {_action_html("Crypto", crypto_value, target_crypto_val, diff_crypto, "#c9a84c")}
-                {_action_html("Cash & Banks", cash_value, target_cash_val, diff_cash, "#7a9fc4")}
-            </div>
-            """, unsafe_allow_html=True)
+            rb1, rb2, rb3 = st.columns(3)
+            _rebal_card(rb1, "Stocks / ETF", stock_value, target_stocks_val, diff_stocks, "#27ae7a", tgt_stocks)
+            _rebal_card(rb2, "Crypto",       crypto_value, target_crypto_val, diff_crypto, "#c9a84c", tgt_crypto)
+            _rebal_card(rb3, "Cash & Banks", cash_value,  target_cash_val,  diff_cash,   "#7a9fc4", tgt_cash, is_cash=True)
+            st.markdown("<div style='height:1rem'></div>", unsafe_allow_html=True)
 
             # Per-asset breakdown within each category
             if not portfolio_df.empty:
