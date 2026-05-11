@@ -739,10 +739,57 @@ with st.sidebar.expander("Cashflow Tracker", expanded=False):
         st.info("No entries yet. Add one above.")
 
 # -------------------------
+# CoinGecko helpers (for tokens not on Yahoo Finance)
+# -------------------------
+COINGECKO_IDS = {
+    'TAO-EUR': 'bittensor',
+    'TAO':     'bittensor',
+}
+
+@st.cache_data(ttl=300)
+def _coingecko_price(coin_id: str, vs_currency: str = 'eur') -> float:
+    try:
+        import requests
+        url = (f"https://api.coingecko.com/api/v3/simple/price"
+               f"?ids={coin_id}&vs_currencies={vs_currency}")
+        r = requests.get(url, timeout=10)
+        if r.status_code == 200:
+            return float(r.json().get(coin_id, {}).get(vs_currency, 0.0))
+    except Exception:
+        pass
+    return 0.0
+
+@st.cache_data(ttl=3600)
+def _coingecko_history(coin_id: str, vs_currency: str = 'eur', period: str = '1y') -> pd.DataFrame:
+    _days = {'6mo': 180, '1y': 365, '2y': 730, '5y': 1825, 'max': 'max'}
+    days = _days.get(period, 365)
+    try:
+        import requests
+        url = (f"https://api.coingecko.com/api/v3/coins/{coin_id}/market_chart"
+               f"?vs_currency={vs_currency}&days={days}&interval=daily")
+        r = requests.get(url, timeout=15)
+        if r.status_code == 200:
+            prices = r.json().get('prices', [])
+            if prices:
+                df = pd.DataFrame(prices, columns=['ts', 'Close'])
+                df['Date'] = pd.to_datetime(df['ts'], unit='ms').dt.date
+                df = df.groupby('Date')['Close'].last().reset_index()
+                return df
+    except Exception:
+        pass
+    return pd.DataFrame()
+
+# -------------------------
 # Price fetching functions
 # -------------------------
 @st.cache_data(ttl=300)
 def get_price(ticker):
+    # Use CoinGecko for known tokens not reliably on Yahoo Finance
+    if ticker in COINGECKO_IDS:
+        price = _coingecko_price(COINGECKO_IDS[ticker])
+        if price > 0:
+            return price
+
     tickers_to_try = [ticker]
     if ticker in ['VUSA', 'VUSA.AS']:
         tickers_to_try.extend(['VUSA.AS', 'VOO'])
@@ -754,8 +801,6 @@ def get_price(ticker):
         tickers_to_try.extend(['SLMC.DE'])
     elif ticker in ['BTC', 'ETH', 'SOL', 'TAO']:
         tickers_to_try.extend([f"{ticker}-EUR", f"{ticker}-USD"])
-    elif ticker == 'TAO-EUR':
-        tickers_to_try.extend(['TAO22974-USD', 'TAO-USD', 'TAO/USD', 'TAO-EUR'])
     elif '-EUR' in ticker:
         tickers_to_try.append(ticker.replace('-EUR', '-USD'))
 
@@ -771,22 +816,18 @@ def get_price(ticker):
                 return price
         except Exception:
             continue
-    if ticker == 'TAO-EUR':
-        tao_trans = st.session_state.transactions[st.session_state.transactions['Ticker'] == 'TAO-EUR']
-        if not tao_trans.empty:
-            valid_trans = tao_trans[tao_trans['Purchase Price'] > 0]
-            if not valid_trans.empty:
-                avg_price = valid_trans['Purchase Price'].mean()
-                st.warning(f"TAO-EUR price not found on Yahoo Finance. Using average purchase price: €{avg_price:.2f}")
-                return avg_price
     return 0.0
 
 @st.cache_data(ttl=3600)
 def get_historical_data(ticker, period='1y'):
+    # Use CoinGecko for known tokens not reliably on Yahoo Finance
+    if ticker in COINGECKO_IDS:
+        df = _coingecko_history(COINGECKO_IDS[ticker], period=period)
+        if not df.empty:
+            return df
+
     tickers_to_try = [ticker]
-    if ticker == 'TAO-EUR':
-        tickers_to_try.extend(['TAO22974-USD', 'TAO-USD', 'TAO/USD', 'TAO-EUR'])
-    elif ticker in ['VUSA', 'VUSA.AS']:
+    if ticker in ['VUSA', 'VUSA.AS']:
         tickers_to_try.extend(['VUSA.AS', 'VOO'])
     elif ticker in ['VWRL', 'VWRL.AS']:
         tickers_to_try.extend(['VWRL.AS'])
@@ -814,19 +855,6 @@ def get_historical_data(ticker, period='1y'):
         except Exception:
             continue
 
-    if ticker == 'TAO-EUR':
-        tao_trans = st.session_state.transactions[st.session_state.transactions['Ticker'] == 'TAO-EUR']
-        if not tao_trans.empty:
-            valid_trans = tao_trans[tao_trans['Purchase Price'] > 0]
-            if not valid_trans.empty:
-                avg_price = valid_trans['Purchase Price'].mean()
-                dates = pd.date_range(end=datetime.today(), periods=252, freq='B')
-                synthetic_data = pd.DataFrame({
-                    'Date': dates,
-                    'Close': [avg_price] * len(dates)
-                })
-                st.warning(f"TAO-EUR historical data not available. Using synthetic data with average purchase price: €{avg_price:.2f}")
-                return synthetic_data
     return pd.DataFrame()
 
 # -------------------------
