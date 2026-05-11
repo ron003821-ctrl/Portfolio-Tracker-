@@ -1607,7 +1607,13 @@ with tab_allocation:
             diff_cash   = target_cash_val   - cash_value
 
             def _action_html(label, current, target, diff, color):
-                action = ("BUY" if diff > 0 else "SELL") if abs(diff) > 1 else "OK"
+                is_cash = label.startswith("Cash")
+                if abs(diff) <= 1:
+                    action = "OK"
+                elif is_cash:
+                    action = "ADD" if diff > 0 else "WITHDRAW"
+                else:
+                    action = "BUY" if diff > 0 else "SELL"
                 action_col = "#27ae7a" if diff > 0 else ("#c94c4c" if diff < 0 else "#5c5a54")
                 return f"""
                 <div style='background:#0c1120; border:1px solid #192138; border-left:3px solid {color}; border-radius:6px; padding:1rem 1.2rem; flex:1; min-width:180px;'>
