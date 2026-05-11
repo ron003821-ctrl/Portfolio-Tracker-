@@ -465,6 +465,38 @@ def delete_cashflow_db(cf_id):
         return False
 
 # -------------------------
+# Allocation Targets
+# -------------------------
+def load_allocation_targets():
+    default = {'stocks_pct': 50.0, 'crypto_pct': 30.0, 'cash_pct': 20.0}
+    try:
+        res = supabase.table('allocation_targets').select('*').eq('id', 1).execute()
+        if res.data:
+            row = res.data[0]
+            return {
+                'stocks_pct': float(row.get('stocks_pct', 50.0)),
+                'crypto_pct': float(row.get('crypto_pct', 30.0)),
+                'cash_pct':   float(row.get('cash_pct',   20.0)),
+            }
+        supabase.table('allocation_targets').insert({'id': 1, **default}).execute()
+        return default
+    except Exception:
+        return default
+
+def save_allocation_targets(stocks_pct, crypto_pct, cash_pct):
+    try:
+        supabase.table('allocation_targets').upsert({
+            'id': 1,
+            'stocks_pct': float(stocks_pct),
+            'crypto_pct': float(crypto_pct),
+            'cash_pct':   float(cash_pct),
+        }).execute()
+        return True
+    except Exception as e:
+        st.error(f"Error saving allocation targets: {e}")
+        return False
+
+# -------------------------
 # Login
 # -------------------------
 if "logged_in" not in st.session_state:
@@ -510,6 +542,9 @@ if "transactions" not in st.session_state:
 
 if "cashflow" not in st.session_state:
     st.session_state.cashflow = load_cashflow()
+
+if "allocation_targets" not in st.session_state:
+    st.session_state.allocation_targets = load_allocation_targets()
 
 # -------------------------
 # Sidebar - Balances
@@ -569,7 +604,7 @@ if (
 # Sidebar - Add Transaction
 # -------------------------
 with st.sidebar.expander("Add Transaction", expanded=False):
-    trans_type = st.selectbox("Transaction Type", ['Buy', 'Dividend', 'Staking', 'Staking Reward', 'Transfer'], key="add_trans_type")
+    trans_type = st.selectbox("Transaction Type", ['Buy', 'Sell', 'Dividend', 'Staking', 'Staking Reward', 'Transfer'], key="add_trans_type")
     transaction_date = st.date_input("Transaction Date", value=datetime.today(), key="add_date")
 
     if trans_type != 'Dividend':
@@ -584,10 +619,11 @@ with st.sidebar.expander("Add Transaction", expanded=False):
 
     ticker = st.text_input("Ticker Symbol (e.g., VWRL.AS, BTC-EUR)", key="add_ticker_input") if trans_type != '' else ''
 
-    if trans_type in ['Buy', 'Staking']:
+    if trans_type in ['Buy', 'Sell', 'Staking']:
+        _price_label = "Sell Price per Unit (EUR)" if trans_type == 'Sell' else "Price per Unit (EUR)"
         quantity = st.number_input("Quantity", min_value=0.0, value=0.0, step=1e-12, format="%.12f", key="add_quantity_input")
-        purchase_price = st.number_input("Price per Unit (EUR)", min_value=0.0, value=0.0, step=0.01, format="%.2f", key="add_price_input")
-        if trans_type == 'Buy':
+        purchase_price = st.number_input(_price_label, min_value=0.0, value=0.0, step=0.01, format="%.2f", key="add_price_input")
+        if trans_type in ['Buy', 'Sell']:
             fee_unit = st.selectbox("Fee Unit", options=['None', 'EUR'], key="add_fee_unit_select")
             fee_amount = st.number_input("Transaction Fee (EUR)", min_value=0.0, value=0.0, step=1e-12, format="%.12f", key="add_fee_amount_input") if fee_unit != 'None' else 0.0
         else:
@@ -626,7 +662,7 @@ with st.sidebar.expander("Edit / Delete Transaction", expanded=False):
         )
         if trans_index is not None:
             trans = st.session_state.transactions.iloc[trans_index]
-            _type_options = ['Buy', 'Dividend', 'Staking', 'Staking Reward', 'Transfer']
+            _type_options = ['Buy', 'Sell', 'Dividend', 'Staking', 'Staking Reward', 'Transfer']
             edit_trans_type = st.selectbox("Transaction Type", _type_options, index=_type_options.index(trans['Type']) if trans['Type'] in _type_options else 0, key="edit_trans_type_select")
             edit_date = st.date_input("Transaction Date", value=pd.to_datetime(trans['Date']).date(), key="edit_date_input")
 
@@ -642,10 +678,11 @@ with st.sidebar.expander("Edit / Delete Transaction", expanded=False):
 
             edit_ticker = st.text_input("Ticker Symbol", value=trans['Ticker'], key="edit_ticker_input") if edit_trans_type != '' else ''
 
-            if edit_trans_type in ['Buy', 'Staking']:
+            if edit_trans_type in ['Buy', 'Sell', 'Staking']:
+                _edit_price_label = "Sell Price per Unit (EUR)" if edit_trans_type == 'Sell' else "Price per Unit (EUR)"
                 edit_quantity = st.number_input("Quantity", min_value=0.0, value=float(trans['Quantity']), step=1e-12, format="%.12f", key="edit_quantity_input")
-                edit_purchase_price = st.number_input("Price per Unit (EUR)", min_value=0.0, value=float(trans['Purchase Price']), step=0.01, format="%.2f", key="edit_price_input")
-                if edit_trans_type == 'Buy':
+                edit_purchase_price = st.number_input(_edit_price_label, min_value=0.0, value=float(trans['Purchase Price']), step=0.01, format="%.2f", key="edit_price_input")
+                if edit_trans_type in ['Buy', 'Sell']:
                     edit_fee_unit = st.selectbox("Fee Unit", options=['None', 'EUR'], index=['None', 'EUR'].index(trans['Fee Unit']) if trans['Fee Unit'] in ['None', 'EUR'] else 0, key="edit_fee_unit_select")
                     edit_fee_amount = st.number_input("Transaction Fee (EUR)", min_value=0.0, value=float(trans['Fee Amount']), step=1e-12, format="%.12f", key="edit_fee_amount_input") if edit_fee_unit != 'None' else 0.0
                 else:
@@ -861,10 +898,10 @@ def get_historical_data(ticker, period='1y'):
 # Add / Edit / Delete transactions
 # -------------------------
 if add_button and ticker:
-    if trans_type in ['Buy', 'Staking', 'Staking Reward'] and quantity <= 0:
+    if trans_type in ['Buy', 'Sell', 'Staking', 'Staking Reward'] and quantity <= 0:
         st.sidebar.error("Quantity must be positive.")
-    elif trans_type in ['Buy', 'Staking'] and purchase_price <= 0:
-        st.sidebar.error("Price per unit must be positive for Buy or Staking.")
+    elif trans_type in ['Buy', 'Sell', 'Staking'] and purchase_price <= 0:
+        st.sidebar.error("Price per unit must be positive.")
     elif trans_type == 'Dividend' and income <= 0:
         st.sidebar.error("Income must be positive for Dividend.")
     elif trans_type == 'Transfer' and fee_amount <= 0:
@@ -877,10 +914,10 @@ if add_button and ticker:
             st.rerun()
 
 if 'edit_button' in locals() and edit_button and trans_index is not None:
-    if edit_trans_type in ['Buy', 'Staking', 'Staking Reward'] and edit_quantity <= 0:
+    if edit_trans_type in ['Buy', 'Sell', 'Staking', 'Staking Reward'] and edit_quantity <= 0:
         st.sidebar.error("Quantity must be positive.")
-    elif edit_trans_type in ['Buy', 'Staking'] and edit_purchase_price <= 0:
-        st.sidebar.error("Price per unit must be positive for Buy or Staking.")
+    elif edit_trans_type in ['Buy', 'Sell', 'Staking'] and edit_purchase_price <= 0:
+        st.sidebar.error("Price per unit must be positive.")
     elif edit_trans_type == 'Dividend' and edit_income <= 0:
         st.sidebar.error("Income must be positive for Dividend.")
     elif edit_trans_type == 'Transfer' and edit_fee_amount <= 0:
@@ -952,6 +989,17 @@ def compute_portfolio(transactions_df=None, cash_balance_local=None):
             q += quantity
             if fee_unit == 'EUR':
                 realized -= fee_amount
+        elif trans_type == 'Sell':
+            fee_eur = fee_amount if fee_unit == 'EUR' else 0.0
+            if q > 0:
+                avg_cost_per_unit  = c / q
+                avg_share_per_unit = s / q
+                proceeds           = quantity * purchase_price - fee_eur
+                cost_of_sold       = quantity * avg_cost_per_unit
+                realized          += proceeds - cost_of_sold
+                c = max(c - quantity * avg_cost_per_unit,  0.0)
+                s = max(s - quantity * avg_share_per_unit, 0.0)
+            q = max(q - quantity, 0.0)
         elif trans_type == 'Dividend':
             realized += income
         elif trans_type == 'Staking':
@@ -1519,6 +1567,95 @@ with tab_allocation:
                 """,
                 unsafe_allow_html=True
             )
+
+        # ── Target Allocation & Rebalancing ──
+        st.markdown("---")
+        st.markdown("<h2><span class='material-symbols-outlined' style='font-size:20px;'>tune</span> Target Allocation & Rebalancing</h2>", unsafe_allow_html=True)
+
+        tgt = st.session_state.allocation_targets
+        st.markdown("<p style='font-family:Inter; font-size:0.8rem; color:#a8a49a; margin-bottom:0.5rem;'>Set your target % for each category. They must add up to 100%.</p>", unsafe_allow_html=True)
+
+        tc1, tc2, tc3 = st.columns(3)
+        with tc1:
+            tgt_stocks = st.number_input("Stocks / ETF (%)", min_value=0.0, max_value=100.0, value=tgt.get('stocks_pct', 50.0), step=0.5, format="%.1f", key="tgt_stocks")
+        with tc2:
+            tgt_crypto = st.number_input("Crypto (%)", min_value=0.0, max_value=100.0, value=tgt.get('crypto_pct', 30.0), step=0.5, format="%.1f", key="tgt_crypto")
+        with tc3:
+            tgt_cash = st.number_input("Cash & Banks (%)", min_value=0.0, max_value=100.0, value=tgt.get('cash_pct', 20.0), step=0.5, format="%.1f", key="tgt_cash")
+
+        tgt_sum = tgt_stocks + tgt_crypto + tgt_cash
+        _sum_col = "#27ae7a" if abs(tgt_sum - 100.0) < 0.01 else "#c94c4c"
+        st.markdown(f"<p style='font-family:Inter; font-size:0.8rem; color:{_sum_col};'>Total: {tgt_sum:.1f}% {'✓' if abs(tgt_sum - 100.0) < 0.01 else '— must equal 100%'}</p>", unsafe_allow_html=True)
+
+        if st.button("Save Targets", key="save_targets_btn"):
+            if abs(tgt_sum - 100.0) < 0.01:
+                if save_allocation_targets(tgt_stocks, tgt_crypto, tgt_cash):
+                    st.session_state.allocation_targets = {'stocks_pct': tgt_stocks, 'crypto_pct': tgt_crypto, 'cash_pct': tgt_cash}
+                    st.success("Targets saved!")
+            else:
+                st.error("Targets must add up to exactly 100%.")
+
+        if abs(tgt_sum - 100.0) < 0.01 and total_value > 0:
+            st.markdown("<h3 style='margin-top:1.2rem;'>Rebalancing Plan</h3>", unsafe_allow_html=True)
+
+            target_stocks_val = total_value * tgt_stocks / 100
+            target_crypto_val = total_value * tgt_crypto / 100
+            target_cash_val   = total_value * tgt_cash   / 100
+
+            diff_stocks = target_stocks_val - stock_value
+            diff_crypto = target_crypto_val - crypto_value
+            diff_cash   = target_cash_val   - cash_value
+
+            def _action_html(label, current, target, diff, color):
+                action = ("BUY" if diff > 0 else "SELL") if abs(diff) > 1 else "OK"
+                action_col = "#27ae7a" if diff > 0 else ("#c94c4c" if diff < 0 else "#5c5a54")
+                return f"""
+                <div style='background:#0c1120; border:1px solid #192138; border-left:3px solid {color}; border-radius:6px; padding:1rem 1.2rem; flex:1; min-width:180px;'>
+                    <div style='font-family:Inter; font-size:0.6rem; text-transform:uppercase; letter-spacing:0.12em; color:#5c5a54; margin-bottom:0.4rem;'>{label}</div>
+                    <div style='font-family:"Ropa Sans"; font-size:1.1rem; color:#f0ece0; margin-bottom:0.15rem;'>Now: €{current:,.0f} ({current/total_value*100:.1f}%)</div>
+                    <div style='font-family:Inter; font-size:0.78rem; color:#a8a49a; margin-bottom:0.4rem;'>Target: €{target:,.0f} ({tgt_stocks if label.startswith("Stock") else tgt_crypto if label.startswith("Crypto") else tgt_cash:.1f}%)</div>
+                    <div style='font-family:"Ropa Sans"; font-size:1.25rem; color:{action_col};'>
+                        {action} {'€{:,.0f}'.format(abs(diff)) if abs(diff) > 1 else '—'}
+                    </div>
+                </div>"""
+
+            st.markdown(f"""
+            <div style='display:flex; gap:1rem; flex-wrap:wrap; margin-bottom:1.5rem;'>
+                {_action_html("Stocks / ETF", stock_value, target_stocks_val, diff_stocks, "#27ae7a")}
+                {_action_html("Crypto", crypto_value, target_crypto_val, diff_crypto, "#c9a84c")}
+                {_action_html("Cash & Banks", cash_value, target_cash_val, diff_cash, "#7a9fc4")}
+            </div>
+            """, unsafe_allow_html=True)
+
+            # Per-asset breakdown within each category
+            if not portfolio_df.empty:
+                st.markdown("<p style='font-family:Inter; font-size:0.75rem; color:#5c5a54; margin-bottom:0.5rem;'>Per-asset suggestions (proportional to current holdings within each category):</p>", unsafe_allow_html=True)
+
+                rows = []
+                for _, row in portfolio_df.iterrows():
+                    t = row['Ticker']
+                    is_crypto = alloc_df[alloc_df['Asset'] == t]['Value'].sum() > 0 and crypto_mask[alloc_df['Asset'] == t].any() if len(alloc_df[alloc_df['Asset'] == t]) > 0 else False
+                    cat_val   = crypto_value if is_crypto else stock_value
+                    cat_diff  = diff_crypto  if is_crypto else diff_stocks
+                    share     = row['Value'] / cat_val if cat_val > 0 else 0
+                    suggestion = cat_diff * share
+                    if abs(suggestion) > 1:
+                        action = "Buy" if suggestion > 0 else "Sell"
+                        units  = abs(suggestion) / row['Current Price'] if row['Current Price'] > 0 else 0
+                        rows.append({
+                            'Ticker': t,
+                            'Category': 'Crypto' if is_crypto else 'Stocks / ETF',
+                            'Action': action,
+                            'Amount (€)': abs(suggestion),
+                            'Units': units,
+                        })
+
+                if rows:
+                    breakdown_df = pd.DataFrame(rows)
+                    st.dataframe(
+                        breakdown_df.style.format({'Amount (€)': '€{:.2f}', 'Units': '{:.6f}'}),
+                        use_container_width=True
+                    )
 
 # -------------------------
 # Tab: Historical Price Charts

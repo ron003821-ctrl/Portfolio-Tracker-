@@ -43,3 +43,11 @@ CREATE TABLE IF NOT EXISTS cashflow (
   amount FLOAT DEFAULT 0,
   notes TEXT DEFAULT ''
 );
+
+CREATE TABLE IF NOT EXISTS allocation_targets (
+  id INTEGER PRIMARY KEY DEFAULT 1,
+  stocks_pct FLOAT DEFAULT 50,
+  crypto_pct FLOAT DEFAULT 30,
+  cash_pct FLOAT DEFAULT 20,
+  CONSTRAINT single_row_alloc CHECK (id = 1)
+);
