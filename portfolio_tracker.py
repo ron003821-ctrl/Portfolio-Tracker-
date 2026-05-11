@@ -569,7 +569,7 @@ if (
 # Sidebar - Add Transaction
 # -------------------------
 with st.sidebar.expander("Add Transaction", expanded=False):
-    trans_type = st.selectbox("Transaction Type", ['Buy', 'Dividend', 'Staking', 'Transfer'], key="add_trans_type")
+    trans_type = st.selectbox("Transaction Type", ['Buy', 'Dividend', 'Staking', 'Staking Reward', 'Transfer'], key="add_trans_type")
     transaction_date = st.date_input("Transaction Date", value=datetime.today(), key="add_date")
 
     if trans_type != 'Dividend':
@@ -584,9 +584,11 @@ with st.sidebar.expander("Add Transaction", expanded=False):
 
     ticker = st.text_input("Ticker Symbol (e.g., VWRL.AS, BTC-EUR)", key="add_ticker_input") if trans_type != '' else ''
 
-    if trans_type in ['Buy', 'Staking']:
+    if trans_type in ['Buy', 'Staking', 'Staking Reward']:
         quantity = st.number_input("Quantity", min_value=0.0, value=0.0, step=1e-12, format="%.12f", key="add_quantity_input")
         purchase_price = st.number_input("Price per Unit (EUR)", min_value=0.0, value=0.0, step=0.01, format="%.2f", key="add_price_input")
+        if trans_type == 'Staking Reward':
+            st.caption("Log tokens earned as staking rewards (e.g. TAO earned from Bittensor subnets). Enter the token price at the time the reward was received.")
         if trans_type == 'Buy':
             fee_unit = st.selectbox("Fee Unit", options=['None', 'EUR'], key="add_fee_unit_select")
             fee_amount = st.number_input("Transaction Fee (EUR)", min_value=0.0, value=0.0, step=1e-12, format="%.12f", key="add_fee_amount_input") if fee_unit != 'None' else 0.0
@@ -620,7 +622,8 @@ with st.sidebar.expander("Edit / Delete Transaction", expanded=False):
         )
         if trans_index is not None:
             trans = st.session_state.transactions.iloc[trans_index]
-            edit_trans_type = st.selectbox("Transaction Type", ['Buy', 'Dividend', 'Staking', 'Transfer'], index=['Buy', 'Dividend', 'Staking', 'Transfer'].index(trans['Type']), key="edit_trans_type_select")
+            _type_options = ['Buy', 'Dividend', 'Staking', 'Staking Reward', 'Transfer']
+            edit_trans_type = st.selectbox("Transaction Type", _type_options, index=_type_options.index(trans['Type']) if trans['Type'] in _type_options else 0, key="edit_trans_type_select")
             edit_date = st.date_input("Transaction Date", value=pd.to_datetime(trans['Date']).date(), key="edit_date_input")
 
             if edit_trans_type != 'Dividend':
@@ -635,7 +638,7 @@ with st.sidebar.expander("Edit / Delete Transaction", expanded=False):
 
             edit_ticker = st.text_input("Ticker Symbol", value=trans['Ticker'], key="edit_ticker_input") if edit_trans_type != '' else ''
 
-            if edit_trans_type in ['Buy', 'Staking']:
+            if edit_trans_type in ['Buy', 'Staking', 'Staking Reward']:
                 edit_quantity = st.number_input("Quantity", min_value=0.0, value=float(trans['Quantity']), step=1e-12, format="%.12f", key="edit_quantity_input")
                 edit_purchase_price = st.number_input("Price per Unit (EUR)", min_value=0.0, value=float(trans['Purchase Price']), step=0.01, format="%.2f", key="edit_price_input")
                 if edit_trans_type == 'Buy':
@@ -820,10 +823,10 @@ def get_historical_data(ticker, period='1y'):
 # Add / Edit / Delete transactions
 # -------------------------
 if add_button and ticker:
-    if trans_type in ['Buy', 'Staking'] and quantity <= 0:
-        st.sidebar.error("Quantity must be positive for Buy or Staking.")
-    elif trans_type in ['Buy', 'Staking'] and purchase_price <= 0:
-        st.sidebar.error("Price per unit must be positive for Buy or Staking.")
+    if trans_type in ['Buy', 'Staking', 'Staking Reward'] and quantity <= 0:
+        st.sidebar.error("Quantity must be positive for Buy, Staking, or Staking Reward.")
+    elif trans_type in ['Buy', 'Staking', 'Staking Reward'] and purchase_price <= 0:
+        st.sidebar.error("Price per unit must be positive for Buy, Staking, or Staking Reward.")
     elif trans_type == 'Dividend' and income <= 0:
         st.sidebar.error("Income must be positive for Dividend.")
     elif trans_type == 'Transfer' and fee_amount <= 0:
@@ -836,10 +839,10 @@ if add_button and ticker:
             st.rerun()
 
 if 'edit_button' in locals() and edit_button and trans_index is not None:
-    if edit_trans_type in ['Buy', 'Staking'] and edit_quantity <= 0:
-        st.sidebar.error("Quantity must be positive for Buy or Staking.")
-    elif edit_trans_type in ['Buy', 'Staking'] and edit_purchase_price <= 0:
-        st.sidebar.error("Price per unit must be positive for Buy or Staking.")
+    if edit_trans_type in ['Buy', 'Staking', 'Staking Reward'] and edit_quantity <= 0:
+        st.sidebar.error("Quantity must be positive for Buy, Staking, or Staking Reward.")
+    elif edit_trans_type in ['Buy', 'Staking', 'Staking Reward'] and edit_purchase_price <= 0:
+        st.sidebar.error("Price per unit must be positive for Buy, Staking, or Staking Reward.")
     elif edit_trans_type == 'Dividend' and edit_income <= 0:
         st.sidebar.error("Income must be positive for Dividend.")
     elif edit_trans_type == 'Transfer' and edit_fee_amount <= 0:
@@ -916,6 +919,14 @@ def compute_portfolio(transactions_df=None, cash_balance_local=None):
         elif trans_type == 'Staking':
             c += quantity * purchase_price
             s += quantity * purchase_price
+            q += quantity
+        elif trans_type == 'Staking Reward':
+            # Tokens earned as staking rewards (e.g. TAO from Bittensor subnets)
+            # Income recognised at receipt; cost basis set to market value at that time
+            reward_value = quantity * purchase_price
+            realized += reward_value
+            c += reward_value
+            s += reward_value
             q += quantity
         elif trans_type == 'Transfer':
             if fee_unit == 'EUR':
@@ -1285,6 +1296,68 @@ with tab_overview:
 
     else:
         st.warning("Portfolio is empty. Add transactions to view portfolio details.")
+
+    # ── Staking Rewards Summary ──
+    staking_rewards_df = st.session_state.transactions[
+        st.session_state.transactions['Type'] == 'Staking Reward'
+    ].copy()
+
+    if not staking_rewards_df.empty:
+        st.markdown("<h2 style='margin-top:1.5rem;'><span class='material-symbols-outlined' style='font-size:20px;'>toll</span> Staking Rewards</h2>", unsafe_allow_html=True)
+        staking_rewards_df['Value at Receipt (€)'] = staking_rewards_df['Quantity'] * staking_rewards_df['Purchase Price']
+
+        rewards_summary = staking_rewards_df.groupby('Ticker').agg(
+            Tokens_Earned=('Quantity', 'sum'),
+            Value_at_Receipt=('Value at Receipt (€)', 'sum'),
+            Num_Rewards=('Quantity', 'count')
+        ).reset_index()
+        rewards_summary.columns = ['Ticker', 'Tokens Earned', 'Income at Receipt (€)', '# Rewards']
+
+        # Add current value of earned tokens
+        if not portfolio_df.empty:
+            def current_val(row):
+                match = portfolio_df[portfolio_df['Ticker'] == row['Ticker']]
+                if not match.empty:
+                    return row['Tokens Earned'] * match['Current Price'].iloc[0]
+                return 0.0
+            rewards_summary['Current Value (€)'] = rewards_summary.apply(current_val, axis=1)
+            rewards_summary['Unrealized Gain (€)'] = rewards_summary['Current Value (€)'] - rewards_summary['Income at Receipt (€)']
+        else:
+            rewards_summary['Current Value (€)'] = 0.0
+            rewards_summary['Unrealized Gain (€)'] = 0.0
+
+        total_rewards_income = rewards_summary['Income at Receipt (€)'].sum()
+        total_rewards_current = rewards_summary['Current Value (€)'].sum()
+        total_rewards_gain = rewards_summary['Unrealized Gain (€)'].sum()
+        _rg_col = "#27ae7a" if total_rewards_gain >= 0 else "#c94c4c"
+        _rg_sign = "+" if total_rewards_gain >= 0 else ""
+
+        st.markdown(f"""
+        <div style='display:flex; gap:1.2rem; flex-wrap:wrap; margin-bottom:1.2rem;'>
+            <div style='flex:1; min-width:150px; background:#0c1120; border:1px solid #192138; border-left:3px solid #c9a84c; border-radius:6px; padding:0.9rem 1.1rem;'>
+                <div style='font-family:Inter; font-size:0.6rem; letter-spacing:0.12em; text-transform:uppercase; color:#5c5a54; margin-bottom:0.25rem;'>Total Income Received</div>
+                <div style='font-family:"Ropa Sans"; font-size:1.3rem; color:#f0ece0;'>€{total_rewards_income:,.2f}</div>
+            </div>
+            <div style='flex:1; min-width:150px; background:#0c1120; border:1px solid #192138; border-left:3px solid #7a9fc4; border-radius:6px; padding:0.9rem 1.1rem;'>
+                <div style='font-family:Inter; font-size:0.6rem; letter-spacing:0.12em; text-transform:uppercase; color:#5c5a54; margin-bottom:0.25rem;'>Current Value of Rewards</div>
+                <div style='font-family:"Ropa Sans"; font-size:1.3rem; color:#f0ece0;'>€{total_rewards_current:,.2f}</div>
+            </div>
+            <div style='flex:1; min-width:150px; background:#0c1120; border:1px solid #192138; border-left:3px solid {_rg_col}; border-radius:6px; padding:0.9rem 1.1rem;'>
+                <div style='font-family:Inter; font-size:0.6rem; letter-spacing:0.12em; text-transform:uppercase; color:#5c5a54; margin-bottom:0.25rem;'>Unrealized Gain on Rewards</div>
+                <div style='font-family:"Ropa Sans"; font-size:1.3rem; color:{_rg_col};'>{_rg_sign}€{total_rewards_gain:,.2f}</div>
+            </div>
+        </div>
+        """, unsafe_allow_html=True)
+
+        st.dataframe(
+            rewards_summary.style.format({
+                'Tokens Earned': '{:.8f}',
+                'Income at Receipt (€)': '€{:.2f}',
+                'Current Value (€)': '€{:.2f}',
+                'Unrealized Gain (€)': '€{:.2f}'
+            }),
+            use_container_width=True
+        )
 
     st.markdown("<h2 style='margin-top:1.5rem;'><span class='material-symbols-outlined' style='font-size:20px;'>receipt_long</span> All Transactions</h2>", unsafe_allow_html=True)
     if not st.session_state.transactions.empty:
