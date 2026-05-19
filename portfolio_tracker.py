@@ -1747,8 +1747,8 @@ with tab_allocation:
                     conc_df.style
                     .format({'Value (€)': '€{:.2f}', '% of Investments': '{:.1f}%',
                              'Limit (€)': '€{:.2f}', 'Over limit (€)': '€{:.2f}'})
-                    .applymap(lambda v: 'color:#c94c4c' if isinstance(v, str) and '⚠' in v else '',
-                              subset=['Status']),
+                    .map(lambda v: 'color:#c94c4c' if isinstance(v, str) and '⚠' in v else '',
+                         subset=['Status']),
                     use_container_width=True
                 )
 
