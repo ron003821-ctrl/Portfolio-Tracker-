@@ -1965,34 +1965,67 @@ with tab_planning:
         m4.metric("Other monthly income", f"€{other_monthly_income:,.0f}",
                   help="Positive entries in your Cashflow tab (excl. work income)")
 
-        if other_monthly_income > 0:
+        # ── Income covers breakdown ──
+        if other_monthly_income > 0 or monthly_expenses > 0:
+            net_after_income = other_monthly_income - monthly_expenses  # positive = surplus
+            if other_monthly_income >= monthly_expenses:
+                _exp_tag  = f"<span style='color:#27ae7a;'>✓ €{monthly_expenses:,.0f} expenses fully covered</span>"
+                _inv_tag  = (
+                    f"<span style='color:#27ae7a;'>+ €{leftover_income:,.0f} toward investments</span>"
+                    if leftover_income > 0 else ""
+                )
+            else:
+                _exp_tag = (
+                    f"<span style='color:#c9a84c;'>€{covered_expenses:,.0f} of €{monthly_expenses:,.0f} expenses "
+                    f"(€{work_for_expenses:,.0f} still needs work)</span>"
+                )
+                _inv_tag = ""
             st.markdown(
-                f"<p style='font-family:Inter; font-size:0.78rem; color:#a8a49a; margin:0.5rem 0 0.2rem;'>"
-                f"💡 Your other income (€{other_monthly_income:,.0f}/mo) already covers "
-                f"{'all expenses' if other_monthly_income >= monthly_expenses else f'€{covered_expenses:,.0f} of your €{monthly_expenses:,.0f} expenses'}"
-                f"{' and contributes €{:,.0f} toward your investment target.'.format(leftover_income) if leftover_income > 0 else '.'}</p>",
+                f"<div style='background:#0c1120; border:1px solid #192138; border-radius:6px; "
+                f"padding:0.8rem 1.1rem; margin:0.5rem 0 0.2rem; font-family:Inter; font-size:0.78rem;'>"
+                f"<span style='color:#5c5a54; text-transform:uppercase; letter-spacing:0.1em; font-size:0.62rem;'>Your other income (€{other_monthly_income:,.0f}/mo) covers →</span><br>"
+                f"<span style='color:#a8a49a;'>{_exp_tag}"
+                f"{('&nbsp;&nbsp;·&nbsp;&nbsp;' + _inv_tag) if _inv_tag else ''}</span>"
+                f"</div>",
                 unsafe_allow_html=True
             )
 
         # ── Work hours breakdown ──
         st.markdown("<h3 style='margin-top:1.2rem;'>How much do you need to work this month?</h3>", unsafe_allow_html=True)
 
-        def _hour_card(col, label, hours, euros, border_color, detail=""):
+        def _hour_card(col, label, hours, euros, border_color, detail="", covered=False):
             days = hours / 8
-            col.markdown(
-                f"<div style='background:#0c1120; border:1px solid #192138; border-left:3px solid {border_color}; border-radius:6px; padding:1rem 1.2rem;'>"
-                f"<div style='font-family:Inter; font-size:0.6rem; text-transform:uppercase; letter-spacing:0.12em; color:#5c5a54; margin-bottom:0.3rem;'>{label}</div>"
-                f"<div style='font-family:Ropa Sans, sans-serif; font-size:1.6rem; color:#f0ece0; letter-spacing:0.03em;'>{hours:.0f} hrs</div>"
-                f"<div style='font-family:Inter; font-size:0.75rem; color:#a8a49a; margin-top:0.1rem;'>≈ {days:.1f} days &nbsp;·&nbsp; €{euros:,.0f}</div>"
-                f"{'<div style=\"font-family:Inter; font-size:0.68rem; color:#5c5a54; margin-top:0.2rem;\">' + detail + '</div>' if detail else ''}"
-                f"</div>",
-                unsafe_allow_html=True
-            )
+            if covered:
+                col.markdown(
+                    f"<div style='background:#0c1120; border:1px solid #192138; border-left:3px solid #27ae7a; border-radius:6px; padding:1rem 1.2rem;'>"
+                    f"<div style='font-family:Inter; font-size:0.6rem; text-transform:uppercase; letter-spacing:0.12em; color:#5c5a54; margin-bottom:0.3rem;'>{label}</div>"
+                    f"<div style='font-family:Ropa Sans, sans-serif; font-size:1.6rem; color:#27ae7a; letter-spacing:0.03em;'>Covered ✓</div>"
+                    f"<div style='font-family:Inter; font-size:0.75rem; color:#a8a49a; margin-top:0.1rem;'>€{euros:,.0f} by other income</div>"
+                    f"{'<div style=\"font-family:Inter; font-size:0.68rem; color:#5c5a54; margin-top:0.2rem;\">' + detail + '</div>' if detail else ''}"
+                    f"</div>",
+                    unsafe_allow_html=True
+                )
+            else:
+                col.markdown(
+                    f"<div style='background:#0c1120; border:1px solid #192138; border-left:3px solid {border_color}; border-radius:6px; padding:1rem 1.2rem;'>"
+                    f"<div style='font-family:Inter; font-size:0.6rem; text-transform:uppercase; letter-spacing:0.12em; color:#5c5a54; margin-bottom:0.3rem;'>{label}</div>"
+                    f"<div style='font-family:Ropa Sans, sans-serif; font-size:1.6rem; color:#f0ece0; letter-spacing:0.03em;'>{hours:.0f} hrs</div>"
+                    f"<div style='font-family:Inter; font-size:0.75rem; color:#a8a49a; margin-top:0.1rem;'>≈ {days:.1f} days &nbsp;·&nbsp; €{euros:,.0f}</div>"
+                    f"{'<div style=\"font-family:Inter; font-size:0.68rem; color:#5c5a54; margin-top:0.2rem;\">' + detail + '</div>' if detail else ''}"
+                    f"</div>",
+                    unsafe_allow_html=True
+                )
 
         h1, h2, h3 = st.columns(3)
-        _hour_card(h1, "For expenses (from work)", hours_expenses,
-                   work_for_expenses, "#c94c4c",
-                   f"After €{other_monthly_income:,.0f} other income" if other_monthly_income > 0 else f"€{monthly_expenses:,.0f}/mo total")
+        # Expenses card: "Covered ✓" if income handles it, otherwise show hours needed
+        if work_for_expenses == 0 and monthly_expenses > 0:
+            _hour_card(h1, "Monthly expenses", hours_expenses,
+                       monthly_expenses, "#27ae7a",
+                       f"Paid by your €{other_monthly_income:,.0f} other income", covered=True)
+        else:
+            _hour_card(h1, "For expenses (from work)", hours_expenses,
+                       work_for_expenses, "#c94c4c",
+                       f"€{covered_expenses:,.0f} covered by income · €{work_for_expenses:,.0f} gap")
         _hour_card(h2, "For investment (from work)", hours_investment,
                    work_for_investment, "#27ae7a",
                    f"€{monthly_invest_needed:,.0f} needed · {expected_return:.1f}% return assumed")
