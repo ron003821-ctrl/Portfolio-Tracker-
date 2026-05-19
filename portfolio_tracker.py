@@ -504,28 +504,30 @@ def delete_cashflow_db(cf_id):
 # Planning Settings
 # -------------------------
 def load_planning_settings():
-    default = {'hourly_rate': 0.0, 'goal_amount': 100000.0, 'target_date': '2030-01-01'}
+    default = {'hourly_rate': 0.0, 'goal_amount': 100000.0, 'target_date': '2030-01-01', 'expected_return': 7.0}
     try:
         res = supabase.table('planning_settings').select('*').eq('id', 1).execute()
         if res.data:
             row = res.data[0]
             return {
-                'hourly_rate': float(row.get('hourly_rate', 0.0)),
-                'goal_amount': float(row.get('goal_amount', 100000.0)),
-                'target_date': str(row.get('target_date', '2030-01-01')),
+                'hourly_rate':     float(row.get('hourly_rate', 0.0)),
+                'goal_amount':     float(row.get('goal_amount', 100000.0)),
+                'target_date':     str(row.get('target_date', '2030-01-01')),
+                'expected_return': float(row.get('expected_return', 7.0)),
             }
         supabase.table('planning_settings').insert({'id': 1, **default}).execute()
         return default
     except Exception:
         return default
 
-def save_planning_settings(hourly_rate, goal_amount, target_date):
+def save_planning_settings(hourly_rate, goal_amount, target_date, expected_return):
     try:
         supabase.table('planning_settings').upsert({
             'id': 1,
-            'hourly_rate': float(hourly_rate),
-            'goal_amount': float(goal_amount),
-            'target_date': target_date.isoformat() if hasattr(target_date, 'isoformat') else str(target_date),
+            'hourly_rate':     float(hourly_rate),
+            'goal_amount':     float(goal_amount),
+            'target_date':     target_date.isoformat() if hasattr(target_date, 'isoformat') else str(target_date),
+            'expected_return': float(expected_return),
         }).execute()
         return True
     except Exception as e:
@@ -1861,7 +1863,7 @@ with tab_planning:
 
     # ── Settings ──
     st.markdown("<h3>Your Settings</h3>", unsafe_allow_html=True)
-    pc1, pc2, pc3 = st.columns(3)
+    pc1, pc2, pc3, pc4 = st.columns(4)
     with pc1:
         hourly_rate = st.number_input("Hourly Rate (€/hr)", min_value=0.0,
             value=float(plan.get('hourly_rate', 0.0)), step=0.5, format="%.2f", key="plan_rate")
@@ -1871,13 +1873,16 @@ with tab_planning:
     with pc3:
         _td_default = pd.to_datetime(plan.get('target_date', '2030-01-01')).date()
         target_date = st.date_input("Target Date", value=_td_default, key="plan_date")
+    with pc4:
+        expected_return = st.number_input("Expected Annual Return (%)", min_value=0.0, max_value=50.0,
+            value=float(plan.get('expected_return', 7.0)), step=0.5, format="%.1f", key="plan_return",
+            help="Expected yearly growth of your investments (e.g. 7% for a typical ETF portfolio)")
 
     if st.button("Save Settings", key="plan_save"):
-        if save_planning_settings(hourly_rate, goal_amount, target_date):
+        if save_planning_settings(hourly_rate, goal_amount, target_date, expected_return):
             st.session_state.planning_settings = {
-                'hourly_rate': hourly_rate,
-                'goal_amount': goal_amount,
-                'target_date': str(target_date)
+                'hourly_rate': hourly_rate, 'goal_amount': goal_amount,
+                'target_date': str(target_date), 'expected_return': expected_return
             }
             st.success("Settings saved!")
 
@@ -1899,18 +1904,42 @@ with tab_planning:
         _td    = pd.to_datetime(str(target_date)).date()
         months_remaining = max((_td.year - _today.year) * 12 + (_td.month - _today.month), 1)
 
-        # ── Monthly expenses from cashflow ──
-        monthly_expenses = 0.0
+        # ── Cashflow: expenses and other income ──
+        monthly_expenses    = 0.0
+        other_monthly_income = 0.0
         if not st.session_state.cashflow.empty:
-            monthly_expenses = abs(float(
+            monthly_expenses     = abs(float(
                 st.session_state.cashflow.loc[st.session_state.cashflow['Amount'] < 0, 'Amount'].sum()
             ))
+            other_monthly_income = float(
+                st.session_state.cashflow.loc[st.session_state.cashflow['Amount'] > 0, 'Amount'].sum()
+            )
 
-        monthly_invest_needed  = remaining / months_remaining
-        total_monthly_needed   = monthly_expenses + monthly_invest_needed
-        hours_expenses         = monthly_expenses       / hourly_rate
-        hours_investment       = monthly_invest_needed  / hourly_rate
-        hours_total            = total_monthly_needed   / hourly_rate
+        # ── Monthly investment needed (with compound interest) ──
+        r = expected_return / 100 / 12  # monthly rate
+        if r > 0:
+            n = months_remaining
+            growth_factor = (1 + r) ** n
+            # PMT = (FV - PV*(1+r)^n) * r / ((1+r)^n - 1)
+            monthly_invest_needed = max(
+                (goal_amount - current_nw * growth_factor) * r / (growth_factor - 1), 0.0
+            )
+        else:
+            monthly_invest_needed = remaining / months_remaining
+
+        # ── Work hours calculation ──
+        # Total needed: cover expenses + hit investment target
+        # Other income (from cashflow) already covers part of it
+        total_monthly_needed  = monthly_expenses + monthly_invest_needed
+        work_income_needed    = max(total_monthly_needed - other_monthly_income, 0.0)
+        hours_total           = work_income_needed / hourly_rate if hourly_rate > 0 else 0.0
+        # Breakdown: what's covered vs what needs work
+        covered_expenses      = min(other_monthly_income, monthly_expenses)
+        work_for_expenses     = max(monthly_expenses - other_monthly_income, 0.0)
+        leftover_income       = max(other_monthly_income - monthly_expenses, 0.0)
+        work_for_investment   = max(monthly_invest_needed - leftover_income, 0.0)
+        hours_expenses        = work_for_expenses  / hourly_rate if hourly_rate > 0 else 0.0
+        hours_investment      = work_for_investment / hourly_rate if hourly_rate > 0 else 0.0
 
         # ── Progress bar ──
         _pg_col = "#27ae7a" if progress >= 80 else "#c9a84c" if progress >= 40 else "#c94c4c"
@@ -1928,10 +1957,22 @@ with tab_planning:
         )
 
         # ── Key metrics ──
-        m1, m2, m3 = st.columns(3)
+        m1, m2, m3, m4 = st.columns(4)
         m1.metric("Remaining to goal", f"€{remaining:,.0f}")
-        m2.metric("Months to target date", str(months_remaining))
-        m3.metric("Monthly investment needed", f"€{monthly_invest_needed:,.0f}")
+        m2.metric("Months to target", str(months_remaining))
+        m3.metric("Monthly investment needed", f"€{monthly_invest_needed:,.0f}",
+                  help=f"With {expected_return:.1f}% annual return (compound interest)")
+        m4.metric("Other monthly income", f"€{other_monthly_income:,.0f}",
+                  help="Positive entries in your Cashflow tab (excl. work income)")
+
+        if other_monthly_income > 0:
+            st.markdown(
+                f"<p style='font-family:Inter; font-size:0.78rem; color:#a8a49a; margin:0.5rem 0 0.2rem;'>"
+                f"💡 Your other income (€{other_monthly_income:,.0f}/mo) already covers "
+                f"{'all expenses' if other_monthly_income >= monthly_expenses else f'€{covered_expenses:,.0f} of your €{monthly_expenses:,.0f} expenses'}"
+                f"{' and contributes €{:,.0f} toward your investment target.'.format(leftover_income) if leftover_income > 0 else '.'}</p>",
+                unsafe_allow_html=True
+            )
 
         # ── Work hours breakdown ──
         st.markdown("<h3 style='margin-top:1.2rem;'>How much do you need to work this month?</h3>", unsafe_allow_html=True)
@@ -1949,9 +1990,15 @@ with tab_planning:
             )
 
         h1, h2, h3 = st.columns(3)
-        _hour_card(h1, "To cover expenses",   hours_expenses,   monthly_expenses,      "#c94c4c", f"€{monthly_expenses:,.0f}/mo expenses")
-        _hour_card(h2, "To hit invest target", hours_investment, monthly_invest_needed, "#27ae7a", f"€{monthly_invest_needed:,.0f}/mo investment")
-        _hour_card(h3, "Total this month",     hours_total,      total_monthly_needed,  "#c9a84c", f"€{hourly_rate:.0f}/hr × {hours_total:.0f} hrs")
+        _hour_card(h1, "For expenses (from work)", hours_expenses,
+                   work_for_expenses, "#c94c4c",
+                   f"After €{other_monthly_income:,.0f} other income" if other_monthly_income > 0 else f"€{monthly_expenses:,.0f}/mo total")
+        _hour_card(h2, "For investment (from work)", hours_investment,
+                   work_for_investment, "#27ae7a",
+                   f"€{monthly_invest_needed:,.0f} needed · {expected_return:.1f}% return assumed")
+        _hour_card(h3, "Total work hours needed", hours_total,
+                   work_income_needed, "#c9a84c",
+                   f"€{hourly_rate:.0f}/hr × {hours_total:.0f} hrs = €{work_income_needed:,.0f}")
 
         # ── Monthly investment history ──
         st.markdown("---")

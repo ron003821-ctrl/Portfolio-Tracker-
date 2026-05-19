@@ -67,8 +67,12 @@ CREATE TABLE IF NOT EXISTS planning_settings (
   hourly_rate FLOAT DEFAULT 0,
   goal_amount FLOAT DEFAULT 100000,
   target_date DATE DEFAULT '2030-01-01',
+  expected_return FLOAT DEFAULT 7,
   CONSTRAINT single_row_planning CHECK (id = 1)
 );
+
+-- If the table already exists, run this to add the new column:
+ALTER TABLE public.planning_settings ADD COLUMN IF NOT EXISTS expected_return FLOAT DEFAULT 7;
 
 -- RLS
 ALTER TABLE public.allocation_targets ENABLE ROW LEVEL SECURITY;
