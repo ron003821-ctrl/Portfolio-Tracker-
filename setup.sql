@@ -44,10 +44,25 @@ CREATE TABLE IF NOT EXISTS cashflow (
   notes TEXT DEFAULT ''
 );
 
+-- allocation_targets: run this to migrate existing table
+ALTER TABLE public.allocation_targets
+  ADD COLUMN IF NOT EXISTS etf_pct FLOAT DEFAULT 50,
+  ADD COLUMN IF NOT EXISTS max_single_pct FLOAT DEFAULT 5;
+
+-- OR if creating fresh:
 CREATE TABLE IF NOT EXISTS allocation_targets (
   id INTEGER PRIMARY KEY DEFAULT 1,
-  stocks_pct FLOAT DEFAULT 50,
-  crypto_pct FLOAT DEFAULT 30,
-  cash_pct FLOAT DEFAULT 20,
+  etf_pct FLOAT DEFAULT 50,
+  max_single_pct FLOAT DEFAULT 5,
   CONSTRAINT single_row_alloc CHECK (id = 1)
 );
+
+CREATE TABLE IF NOT EXISTS asset_categories (
+  ticker TEXT PRIMARY KEY,
+  category TEXT NOT NULL CHECK (category IN ('ETF', 'Stock', 'Crypto'))
+);
+
+-- RLS
+ALTER TABLE public.allocation_targets ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.asset_categories ENABLE ROW LEVEL SECURITY;
+CREATE POLICY IF NOT EXISTS "Allow all" ON public.asset_categories FOR ALL TO anon USING (true) WITH CHECK (true);

@@ -10,6 +10,26 @@ from zoneinfo import ZoneInfo
 st.set_page_config(page_title="Portfolio Tracker", page_icon="", layout="wide")
 
 # -------------------------
+# Asset Category Detection
+# -------------------------
+_KNOWN_CRYPTO = {
+    'BTC','ETH','SOL','TAO','XMR','LTC','ADA','DOGE','BNB','XRP','AVAX','DOT',
+    'BTC-EUR','BTC-USD','ETH-EUR','ETH-USD','SOL-EUR','SOL-USD',
+    'TAO-EUR','TAO-USD','XMR-EUR','ADA-EUR','DOGE-EUR','BNB-EUR','XRP-EUR',
+}
+_ETF_SUFFIXES = ('.AS','.DE','.L','.PA','.MI','.MC','.SW','.BR','.CO','.HE','.OL','.ST')
+
+def auto_detect_category(ticker: str) -> str:
+    t = ticker.upper()
+    base = t.split('-')[0]
+    if t in _KNOWN_CRYPTO or base in _KNOWN_CRYPTO:
+        return 'Crypto'
+    for s in _ETF_SUFFIXES:
+        if t.endswith(s):
+            return 'ETF'
+    return 'Stock'
+
+# -------------------------
 # Styling
 # -------------------------
 st.markdown("""
@@ -468,33 +488,55 @@ def delete_cashflow_db(cf_id):
 # Allocation Targets
 # -------------------------
 def load_allocation_targets():
-    default = {'stocks_pct': 50.0, 'crypto_pct': 30.0, 'cash_pct': 20.0}
+    default = {'etf_pct': 50.0, 'max_single_pct': 5.0}
     try:
         res = supabase.table('allocation_targets').select('*').eq('id', 1).execute()
         if res.data:
             row = res.data[0]
             return {
-                'stocks_pct': float(row.get('stocks_pct', 50.0)),
-                'crypto_pct': float(row.get('crypto_pct', 30.0)),
-                'cash_pct':   float(row.get('cash_pct',   20.0)),
+                'etf_pct':        float(row.get('etf_pct', 50.0)),
+                'max_single_pct': float(row.get('max_single_pct', 5.0)),
             }
         supabase.table('allocation_targets').insert({'id': 1, **default}).execute()
         return default
     except Exception:
         return default
 
-def save_allocation_targets(stocks_pct, crypto_pct, cash_pct):
+def save_allocation_targets(etf_pct, max_single_pct):
     try:
         supabase.table('allocation_targets').upsert({
             'id': 1,
-            'stocks_pct': float(stocks_pct),
-            'crypto_pct': float(crypto_pct),
-            'cash_pct':   float(cash_pct),
+            'etf_pct':        float(etf_pct),
+            'max_single_pct': float(max_single_pct),
         }).execute()
         return True
     except Exception as e:
         st.error(f"Error saving allocation targets: {e}")
         return False
+
+# -------------------------
+# Asset Category Overrides
+# -------------------------
+def load_asset_categories() -> dict:
+    try:
+        res = supabase.table('asset_categories').select('*').execute()
+        return {r['ticker']: r['category'] for r in (res.data or [])}
+    except Exception:
+        return {}
+
+def save_asset_category(ticker: str, category: str) -> bool:
+    try:
+        supabase.table('asset_categories').upsert(
+            {'ticker': ticker, 'category': category}
+        ).execute()
+        return True
+    except Exception as e:
+        st.error(f"Error saving category: {e}")
+        return False
+
+def get_category(ticker: str) -> str:
+    overrides = st.session_state.get('asset_categories', {})
+    return overrides.get(ticker, auto_detect_category(ticker))
 
 # -------------------------
 # Login
@@ -545,6 +587,9 @@ if "cashflow" not in st.session_state:
 
 if "allocation_targets" not in st.session_state:
     st.session_state.allocation_targets = load_allocation_targets()
+
+if "asset_categories" not in st.session_state:
+    st.session_state.asset_categories = load_asset_categories()
 
 # -------------------------
 # Sidebar - Balances
@@ -1322,11 +1367,23 @@ with tab_history:
 with tab_overview:
     st.markdown("<h2><span class='material-symbols-outlined' style='font-size:20px;'>dashboard</span> Portfolio Overview</h2>", unsafe_allow_html=True)
 
+    _view = st.radio("View", ["Total Portfolio", "Investments Only"], horizontal=True, key="overview_view")
+    st.markdown("<div style='height:0.5rem'></div>", unsafe_allow_html=True)
+
     portfolio_df, realized, unrealized, total_profit, profit_percentage = compute_portfolio()
 
     if not portfolio_df.empty:
-        portfolio_df_display = portfolio_df.rename(columns={
+        # Tag each asset with its category
+        portfolio_df['Category'] = portfolio_df['Ticker'].apply(get_category)
+
+        if _view == "Investments Only":
+            display_df = portfolio_df.copy()
+        else:
+            display_df = portfolio_df.copy()
+
+        portfolio_df_display = display_df.rename(columns={
             "Ticker": "Asset",
+            "Category": "Type",
             "Quantity": "Qty",
             "Average Purchase Price": "GIP(€)",
             "Cost Basis": "Invested(€)",
@@ -1336,7 +1393,7 @@ with tab_overview:
         })
 
         st.dataframe(
-            portfolio_df_display.style.format({
+            portfolio_df_display[["Asset","Type","Qty","GIP(€)","Invested(€)","Price(€)","Value(€)","Unrealized P/L (€)"]].style.format({
                 "Qty": "{:.8f}",
                 "GIP(€)": "€{:.4f}",
                 "Invested(€)": "€{:.2f}",
@@ -1349,32 +1406,40 @@ with tab_overview:
 
         st.markdown("<br>", unsafe_allow_html=True)
 
-        total_invested = portfolio_df["Cost Basis"].sum()
+        investments_value = portfolio_df["Value"].sum()
+        total_invested    = portfolio_df["Cost Basis"].sum()
         total_bank = (
             st.session_state.balances.get("credit_mutuel_balance", 0.0)
             + st.session_state.balances.get("cic_balance", 0.0)
         )
-        total_value = (
-            portfolio_df["Value"].sum()
-            + st.session_state.balances.get("cash_balance", 0.0)
-            + total_bank
-        )
+        cash_broker = st.session_state.balances.get("cash_balance", 0.0)
+        total_value = investments_value + cash_broker + total_bank
 
-        col1, col2 = st.columns(2)
-        col1.metric("Total Invested", f"€{total_invested:,.2f}")
-        col2.metric("Total Portfolio Value", f"€{total_value:,.2f}")
-
-        col3, col4 = st.columns(2)
-        col3.metric("Broker Cash", f"€{st.session_state.balances.get('cash_balance', 0.0):,.2f}")
-        col4.metric("Total Bank Balance", f"€{total_bank:,.2f}")
-
-        col5, col6 = st.columns(2)
-        col5.metric("Realized Income/Expenses", f"€{realized:,.2f}", delta_color="normal")
-        col6.metric("Unrealized Profit/Loss", f"€{unrealized:,.2f}", delta_color="normal")
-
-        col7, col8 = st.columns(2)
-        col7.metric("Total Profit", f"€{total_profit:,.2f}", delta_color="normal")
-        col8.metric("Profit Percentage", f"{profit_percentage:.2f}%", delta_color="normal")
+        if _view == "Investments Only":
+            # Recalculate P&L for investments only (exclude cash)
+            inv_pct = (total_profit / total_invested * 100) if total_invested > 0 else 0.0
+            col1, col2 = st.columns(2)
+            col1.metric("Total Invested (cost basis)", f"€{total_invested:,.2f}")
+            col2.metric("Investments Value", f"€{investments_value:,.2f}")
+            col5, col6 = st.columns(2)
+            col5.metric("Realized Income/Expenses", f"€{realized:,.2f}", delta_color="normal")
+            col6.metric("Unrealized Profit/Loss", f"€{unrealized:,.2f}", delta_color="normal")
+            col7, col8 = st.columns(2)
+            col7.metric("Total Profit", f"€{total_profit:,.2f}", delta_color="normal")
+            col8.metric("Return on Investments", f"{inv_pct:.2f}%", delta_color="normal")
+        else:
+            col1, col2 = st.columns(2)
+            col1.metric("Total Invested", f"€{total_invested:,.2f}")
+            col2.metric("Total Portfolio Value", f"€{total_value:,.2f}")
+            col3, col4 = st.columns(2)
+            col3.metric("Broker Cash", f"€{cash_broker:,.2f}")
+            col4.metric("Total Bank Balance", f"€{total_bank:,.2f}")
+            col5, col6 = st.columns(2)
+            col5.metric("Realized Income/Expenses", f"€{realized:,.2f}", delta_color="normal")
+            col6.metric("Unrealized Profit/Loss", f"€{unrealized:,.2f}", delta_color="normal")
+            col7, col8 = st.columns(2)
+            col7.metric("Total Profit", f"€{total_profit:,.2f}", delta_color="normal")
+            col8.metric("Profit Percentage", f"{profit_percentage:.2f}%", delta_color="normal")
 
     else:
         st.warning("Portfolio is empty. Add transactions to view portfolio details.")
@@ -1444,76 +1509,70 @@ with tab_overview:
 # -------------------------
 with tab_allocation:
     st.markdown("<h2><span class='material-symbols-outlined' style='font-size:20px;'>donut_large</span> Asset Allocation</h2>", unsafe_allow_html=True)
-    custom_colors = ['#c9a84c', '#27ae7a', '#7a9fc4', '#d4b86a', '#c94c4c', '#a8a49a']
 
-    allocation_rows = []
+    # ── Build category-aware allocation data ──
+    _CAT_COLORS = {'ETF': '#27ae7a', 'Stock': '#7a9fc4', 'Crypto': '#c9a84c', 'Cash & Banks': '#5c5a54'}
 
+    cash_broker = float(st.session_state.balances.get("cash_balance", 0.0) or 0.0)
+    cash_credit = float(st.session_state.balances.get("credit_mutuel_balance", 0.0) or 0.0)
+    cash_cic    = float(st.session_state.balances.get("cic_balance", 0.0) or 0.0)
+    total_cash  = cash_broker + cash_credit + cash_cic
+
+    alloc_rows = []
     if not portfolio_df.empty:
         portfolio_df['Value'] = pd.to_numeric(portfolio_df['Value'], errors='coerce').fillna(0.0)
         for _, row in portfolio_df.iterrows():
             if row['Value'] > 0:
-                allocation_rows.append({
-                    "Asset": str(row["Ticker"]),
-                    "Value": float(row["Value"])
+                alloc_rows.append({
+                    'Asset': str(row['Ticker']),
+                    'Category': get_category(str(row['Ticker'])),
+                    'Value': float(row['Value'])
                 })
-
-    cash_broker = float(st.session_state.balances.get("cash_balance", 0.0) or 0.0)
-    cash_credit = float(st.session_state.balances.get("credit_mutuel_balance", 0.0) or 0.0)
-    cash_cic = float(st.session_state.balances.get("cic_balance", 0.0) or 0.0)
-    total_cash = cash_broker + cash_credit + cash_cic
-
-    allocation_rows.append({"Asset": "Cash & Banks", "Value": float(total_cash)})
-
-    alloc_df = pd.DataFrame(allocation_rows)
-    if 'Value' in alloc_df.columns:
-        alloc_df['Value'] = pd.to_numeric(alloc_df['Value'], errors='coerce').fillna(0.0)
-    else:
-        alloc_df['Value'] = 0.0
+    alloc_rows.append({'Asset': 'Cash & Banks', 'Category': 'Cash & Banks', 'Value': float(total_cash)})
+    alloc_df = pd.DataFrame(alloc_rows)
+    alloc_df['Value'] = pd.to_numeric(alloc_df['Value'], errors='coerce').fillna(0.0)
 
     if alloc_df['Value'].sum() == 0:
         st.warning("No positive values found. Add transactions or balances to see allocation.")
     else:
-        known_crypto = {"BTC", "BTC-EUR", "BTC-USD", "ETH", "ETH-EUR", "ETH-USD",
-                        "SOL", "SOL-EUR", "SOL-USD", "TAO", "TAO-EUR", "XMR", "LTC",
-                        "ADA", "DOGE", "BNB"}
-        crypto_pattern = r"\b(BTC|ETH|SOL|TAO|XMR|LTC|ADA|DOGE|BNB)\b"
+        total_value   = alloc_df['Value'].sum()
+        etf_value     = float(alloc_df.loc[alloc_df['Category'] == 'ETF',          'Value'].sum())
+        stock_value   = float(alloc_df.loc[alloc_df['Category'] == 'Stock',        'Value'].sum())
+        crypto_value  = float(alloc_df.loc[alloc_df['Category'] == 'Crypto',       'Value'].sum())
+        cash_value    = float(alloc_df.loc[alloc_df['Category'] == 'Cash & Banks', 'Value'].sum())
+        investments_value = etf_value + stock_value + crypto_value
 
-        total_value = alloc_df["Value"].sum()
+        pct_etf    = etf_value    / total_value * 100 if total_value > 0 else 0
+        pct_stock  = stock_value  / total_value * 100 if total_value > 0 else 0
+        pct_crypto = crypto_value / total_value * 100 if total_value > 0 else 0
+        pct_cash   = cash_value   / total_value * 100 if total_value > 0 else 0
 
-        crypto_mask = alloc_df["Asset"].str.upper().isin({k.upper() for k in known_crypto}) | alloc_df["Asset"].str.contains(crypto_pattern, case=False, na=False)
-        crypto_value = alloc_df.loc[crypto_mask, "Value"].sum()
-        cash_value = alloc_df.loc[alloc_df["Asset"] == "Cash & Banks", "Value"].sum()
-        stock_value = total_value - crypto_value - cash_value
-
-        crypto_value = float(max(crypto_value, 0.0))
-        cash_value = float(max(cash_value, 0.0))
-        stock_value = float(max(stock_value, 0.0))
-
-        pct_crypto = (crypto_value / total_value * 100) if total_value > 0 else 0.0
-        pct_stocks = (stock_value / total_value * 100) if total_value > 0 else 0.0
-        pct_cash = (cash_value / total_value * 100) if total_value > 0 else 0.0
+        # ── Pie chart ──
+        # Group by category for the chart
+        chart_df = alloc_df.groupby('Category')['Value'].sum().reset_index()
+        cat_order  = ['ETF', 'Stock', 'Crypto', 'Cash & Banks']
+        chart_df['sort'] = chart_df['Category'].apply(lambda c: cat_order.index(c) if c in cat_order else 99)
+        chart_df = chart_df.sort_values('sort').drop('sort', axis=1)
+        chart_colors = [_CAT_COLORS.get(c, '#a8a49a') for c in chart_df['Category']]
 
         col1, col2 = st.columns([2.2, 1])
-
         with col1:
             fig = go.Figure(data=[go.Pie(
-                labels=alloc_df["Asset"],
-                values=alloc_df["Value"],
+                labels=chart_df['Category'],
+                values=chart_df['Value'],
                 hole=0.55,
-                marker=dict(colors=custom_colors, line=dict(color="#080c18", width=2)),
+                marker=dict(colors=chart_colors, line=dict(color="#080c18", width=2)),
                 textposition="outside",
                 textinfo="label+percent",
                 textfont=dict(family="Inter", size=11, color="#a8a49a"),
                 hovertemplate="%{label}<br>€%{value:,.2f}<br>%{percent}<extra></extra>",
-                pull=[0.02] * len(alloc_df),
+                pull=[0.02] * len(chart_df),
             )])
             fig.update_layout(
                 showlegend=False,
                 margin=dict(l=20, r=20, t=40, b=20),
                 font=dict(family="Inter", size=12, color="#5c5a54"),
-                paper_bgcolor="#080c18",
-                plot_bgcolor="#080c18",
-                title=dict(text="", font=dict(family="Ropa Sans", color="#f0ece0", size=15), x=0),
+                paper_bgcolor="#080c18", plot_bgcolor="#080c18",
                 height=480,
                 annotations=[dict(
                     text=f"<b>€{total_value:,.0f}</b><br><span style='font-size:10px;color:#5c5a54;'>NET WORTH</span>",
@@ -1524,143 +1583,174 @@ with tab_allocation:
             st.plotly_chart(fig, use_container_width=True)
 
         with col2:
-            st.markdown(
-                f"""
-                <div style="height:480px; display:flex; align-items:center; justify-content:center;">
-                    <div style="width:100%; padding-left:12px;">
-                        <div style="font-family:Inter; font-size:0.6rem; text-transform:uppercase; letter-spacing:0.14em; color:#5c5a54; font-weight:600; margin-bottom:1.2rem;">Category Breakdown</div>
-                        <div style="font-family:Inter; font-size:0.85rem; line-height:1;">
-                            <div style="display:flex; justify-content:space-between; align-items:center; border-bottom:1px solid #192138; padding:0.65rem 0;">
-                                <span style="color:#a8a49a; display:flex; align-items:center; gap:0.5rem;">
-                                    <span style="width:8px; height:8px; border-radius:2px; background:#c9a84c; display:inline-block;"></span>Crypto
-                                </span>
-                                <div style="text-align:right;">
-                                    <div style="font-family:'Ropa Sans'; font-size:1rem; color:#f0ece0;">{pct_crypto:.1f}%</div>
-                                    <div style="font-family:Inter; font-size:0.65rem; color:#5c5a54;">€{crypto_value:,.0f}</div>
-                                </div>
-                            </div>
-                            <div style="display:flex; justify-content:space-between; align-items:center; border-bottom:1px solid #192138; padding:0.65rem 0;">
-                                <span style="color:#a8a49a; display:flex; align-items:center; gap:0.5rem;">
-                                    <span style="width:8px; height:8px; border-radius:2px; background:#27ae7a; display:inline-block;"></span>Stocks / ETF
-                                </span>
-                                <div style="text-align:right;">
-                                    <div style="font-family:'Ropa Sans'; font-size:1rem; color:#f0ece0;">{pct_stocks:.1f}%</div>
-                                    <div style="font-family:Inter; font-size:0.65rem; color:#5c5a54;">€{stock_value:,.0f}</div>
-                                </div>
-                            </div>
-                            <div style="display:flex; justify-content:space-between; align-items:center; padding:0.65rem 0;">
-                                <span style="color:#a8a49a; display:flex; align-items:center; gap:0.5rem;">
-                                    <span style="width:8px; height:8px; border-radius:2px; background:#7a9fc4; display:inline-block;"></span>Cash & Banks
-                                </span>
-                                <div style="text-align:right;">
-                                    <div style="font-family:'Ropa Sans'; font-size:1rem; color:#f0ece0;">{pct_cash:.1f}%</div>
-                                    <div style="font-family:Inter; font-size:0.65rem; color:#5c5a54;">€{cash_value:,.0f}</div>
-                                </div>
-                            </div>
-                        </div>
-                        <div style="margin-top:1.2rem; padding-top:0.8rem; border-top:1px solid rgba(201,168,76,0.3);">
-                            <div style="font-family:Inter; font-size:0.6rem; text-transform:uppercase; letter-spacing:0.14em; color:#5c5a54; margin-bottom:0.3rem;">Total Net Worth</div>
-                            <div style="font-family:'Ropa Sans'; font-size:1.5rem; color:#c9a84c; letter-spacing:0.03em;">€{total_value:,.2f}</div>
-                        </div>
-                    </div>
-                </div>
-                """,
-                unsafe_allow_html=True
+            def _breakdown_row(label, value, pct, color, border=True):
+                border_style = "border-bottom:1px solid #192138;" if border else ""
+                return (
+                    f"<div style='display:flex; justify-content:space-between; align-items:center; {border_style} padding:0.65rem 0;'>"
+                    f"<span style='color:#a8a49a; display:flex; align-items:center; gap:0.5rem;'>"
+                    f"<span style='width:8px; height:8px; border-radius:2px; background:{color}; display:inline-block;'></span>{label}</span>"
+                    f"<div style='text-align:right;'>"
+                    f"<div style='font-family:Ropa Sans; font-size:1rem; color:#f0ece0;'>{pct:.1f}%</div>"
+                    f"<div style='font-family:Inter; font-size:0.65rem; color:#5c5a54;'>€{value:,.0f}</div>"
+                    f"</div></div>"
+                )
+            breakdown_html = (
+                "<div style='height:480px; display:flex; align-items:center; justify-content:center;'>"
+                "<div style='width:100%; padding-left:12px;'>"
+                "<div style='font-family:Inter; font-size:0.6rem; text-transform:uppercase; letter-spacing:0.14em; color:#5c5a54; font-weight:600; margin-bottom:1.2rem;'>Category Breakdown</div>"
+                + _breakdown_row("ETF",          etf_value,    pct_etf,    "#27ae7a")
+                + _breakdown_row("Individual Stock", stock_value, pct_stock, "#7a9fc4")
+                + _breakdown_row("Crypto",        crypto_value, pct_crypto, "#c9a84c")
+                + _breakdown_row("Cash & Banks",  cash_value,   pct_cash,   "#5c5a54", border=False)
+                + f"<div style='margin-top:1.2rem; padding-top:0.8rem; border-top:1px solid rgba(201,168,76,0.3);'>"
+                f"<div style='font-family:Inter; font-size:0.6rem; text-transform:uppercase; letter-spacing:0.14em; color:#5c5a54; margin-bottom:0.3rem;'>Total Net Worth</div>"
+                f"<div style='font-family:Ropa Sans; font-size:1.5rem; color:#c9a84c; letter-spacing:0.03em;'>€{total_value:,.2f}</div>"
+                f"</div></div></div>"
             )
+            st.markdown(breakdown_html, unsafe_allow_html=True)
+
+        # ── Category Overrides ──
+        st.markdown("---")
+        st.markdown("<h2><span class='material-symbols-outlined' style='font-size:20px;'>category</span> Asset Category Overrides</h2>", unsafe_allow_html=True)
+        st.markdown("<p style='font-family:Inter; font-size:0.8rem; color:#a8a49a; margin-bottom:0.75rem;'>Auto-detected categories based on ticker. Override if incorrect.</p>", unsafe_allow_html=True)
+
+        if not portfolio_df.empty:
+            for _, asset_row in portfolio_df.iterrows():
+                tk = str(asset_row['Ticker'])
+                detected = auto_detect_category(tk)
+                current_cat = get_category(tk)
+                ov_col1, ov_col2, ov_col3 = st.columns([2, 2, 1])
+                ov_col1.markdown(f"<div style='padding:0.45rem 0; font-family:Inter; font-size:0.85rem; color:#f0ece0;'>{tk}</div>", unsafe_allow_html=True)
+                ov_col2.markdown(f"<div style='padding:0.45rem 0; font-family:Inter; font-size:0.75rem; color:#5c5a54;'>Auto: {detected}</div>", unsafe_allow_html=True)
+                new_cat = ov_col3.selectbox("", ['ETF', 'Stock', 'Crypto'],
+                    index=['ETF','Stock','Crypto'].index(current_cat) if current_cat in ['ETF','Stock','Crypto'] else 1,
+                    key=f"cat_{tk}", label_visibility="collapsed")
+                if new_cat != current_cat:
+                    if save_asset_category(tk, new_cat):
+                        st.session_state.asset_categories[tk] = new_cat
+                        st.rerun()
 
         # ── Target Allocation & Rebalancing ──
         st.markdown("---")
         st.markdown("<h2><span class='material-symbols-outlined' style='font-size:20px;'>tune</span> Target Allocation & Rebalancing</h2>", unsafe_allow_html=True)
 
         tgt = st.session_state.allocation_targets
-        st.markdown("<p style='font-family:Inter; font-size:0.8rem; color:#a8a49a; margin-bottom:0.5rem;'>Set your target % for each category. They must add up to 100%.</p>", unsafe_allow_html=True)
 
-        tc1, tc2, tc3 = st.columns(3)
+        # Monthly expenses from cashflow
+        monthly_expenses = 0.0
+        if not st.session_state.cashflow.empty:
+            monthly_expenses = abs(float(
+                st.session_state.cashflow.loc[st.session_state.cashflow['Amount'] < 0, 'Amount'].sum()
+            ))
+        cash_target = monthly_expenses * 6
+
+        st.markdown(
+            f"<p style='font-family:Inter; font-size:0.8rem; color:#a8a49a; margin-bottom:0.25rem;'>"
+            f"💰 Monthly expenses (from Cashflow): <b style='color:#f0ece0;'>€{monthly_expenses:,.2f}</b> "
+            f"→ Cash safety target (×6): <b style='color:#c9a84c;'>€{cash_target:,.2f}</b></p>",
+            unsafe_allow_html=True
+        )
+
+        st.markdown("<p style='font-family:Inter; font-size:0.75rem; color:#5c5a54; margin-bottom:0.75rem;'>Adjust the investment split and max concentration below.</p>", unsafe_allow_html=True)
+
+        tc1, tc2 = st.columns(2)
         with tc1:
-            tgt_stocks = st.number_input("Stocks / ETF (%)", min_value=0.0, max_value=100.0, value=tgt.get('stocks_pct', 50.0), step=0.5, format="%.1f", key="tgt_stocks")
+            etf_pct = st.number_input("ETF % of investments", min_value=0.0, max_value=100.0,
+                value=tgt.get('etf_pct', 50.0), step=1.0, format="%.0f", key="tgt_etf_pct",
+                help="Target % of your invested money (excl. cash) to hold in ETFs")
         with tc2:
-            tgt_crypto = st.number_input("Crypto (%)", min_value=0.0, max_value=100.0, value=tgt.get('crypto_pct', 30.0), step=0.5, format="%.1f", key="tgt_crypto")
-        with tc3:
-            tgt_cash = st.number_input("Cash & Banks (%)", min_value=0.0, max_value=100.0, value=tgt.get('cash_pct', 20.0), step=0.5, format="%.1f", key="tgt_cash")
+            max_single_pct = st.number_input("Max % per stock / crypto", min_value=0.5, max_value=50.0,
+                value=tgt.get('max_single_pct', 5.0), step=0.5, format="%.1f", key="tgt_max_single",
+                help="No individual stock or crypto should exceed this % of total investments")
 
-        tgt_sum = tgt_stocks + tgt_crypto + tgt_cash
-        _sum_col = "#27ae7a" if abs(tgt_sum - 100.0) < 0.01 else "#c94c4c"
-        st.markdown(f"<p style='font-family:Inter; font-size:0.8rem; color:{_sum_col};'>Total: {tgt_sum:.1f}% {'✓' if abs(tgt_sum - 100.0) < 0.01 else '— must equal 100%'}</p>", unsafe_allow_html=True)
+        stock_crypto_pct = 100.0 - etf_pct
+        st.markdown(
+            f"<p style='font-family:Inter; font-size:0.78rem; color:#a8a49a;'>"
+            f"→ ETF: <b style='color:#27ae7a;'>{etf_pct:.0f}%</b> of investments &nbsp;|&nbsp; "
+            f"Stocks + Crypto: <b style='color:#7a9fc4;'>{stock_crypto_pct:.0f}%</b> of investments &nbsp;|&nbsp; "
+            f"Max per asset: <b style='color:#c9a84c;'>{max_single_pct:.1f}%</b></p>",
+            unsafe_allow_html=True
+        )
 
         if st.button("Save Targets", key="save_targets_btn"):
-            if abs(tgt_sum - 100.0) < 0.01:
-                if save_allocation_targets(tgt_stocks, tgt_crypto, tgt_cash):
-                    st.session_state.allocation_targets = {'stocks_pct': tgt_stocks, 'crypto_pct': tgt_crypto, 'cash_pct': tgt_cash}
-                    st.success("Targets saved!")
+            if save_allocation_targets(etf_pct, max_single_pct):
+                st.session_state.allocation_targets = {'etf_pct': etf_pct, 'max_single_pct': max_single_pct}
+                st.success("Targets saved!")
+
+        # ── Rebalancing Plan ──
+        st.markdown("<h3 style='margin-top:1.2rem;'>Rebalancing Plan</h3>", unsafe_allow_html=True)
+
+        # Cash card
+        cash_diff = cash_target - cash_value
+        def _rebal_card(col, label, current, target_val, diff, border_color, subtitle, is_cash=False):
+            if abs(diff) <= 1:
+                action, action_col = "✓  OK", "#5c5a54"
+            elif is_cash:
+                action = f"ADD  €{abs(diff):,.0f}" if diff > 0 else f"WITHDRAW  €{abs(diff):,.0f}"
+                action_col = "#27ae7a" if diff > 0 else "#c94c4c"
             else:
-                st.error("Targets must add up to exactly 100%.")
+                action = f"BUY  €{abs(diff):,.0f}" if diff > 0 else f"SELL  €{abs(diff):,.0f}"
+                action_col = "#27ae7a" if diff > 0 else "#c94c4c"
+            col.markdown(
+                f"<div style='background:#0c1120; border:1px solid #192138; border-left:3px solid {border_color}; border-radius:6px; padding:1rem 1.2rem;'>"
+                f"<div style='font-family:Inter; font-size:0.6rem; text-transform:uppercase; letter-spacing:0.12em; color:#5c5a54; margin-bottom:0.3rem;'>{label}</div>"
+                f"<div style='font-family:Inter; font-size:0.78rem; color:#f0ece0; margin-bottom:0.1rem;'>Now: <b>€{current:,.0f}</b></div>"
+                f"<div style='font-family:Inter; font-size:0.72rem; color:#a8a49a; margin-bottom:0.45rem;'>Target: €{target_val:,.0f} {subtitle}</div>"
+                f"<div style='font-family:Ropa Sans, sans-serif; font-size:1.3rem; color:{action_col}; letter-spacing:0.03em;'>{action}</div>"
+                f"</div>",
+                unsafe_allow_html=True
+            )
 
-        if abs(tgt_sum - 100.0) < 0.01 and total_value > 0:
-            st.markdown("<h3 style='margin-top:1.2rem;'>Rebalancing Plan</h3>", unsafe_allow_html=True)
+        rb1, rb2, rb3 = st.columns(3)
+        _rebal_card(rb1, "Cash & Banks", cash_value, cash_target, cash_diff, "#5c5a54", "(6 months expenses)", is_cash=True)
 
-            target_stocks_val = total_value * tgt_stocks / 100
-            target_crypto_val = total_value * tgt_crypto / 100
-            target_cash_val   = total_value * tgt_cash   / 100
+        etf_target         = investments_value * etf_pct / 100
+        stock_crypto_target = investments_value * stock_crypto_pct / 100
+        etf_diff           = etf_target - etf_value
+        stock_crypto_diff  = stock_crypto_target - (stock_value + crypto_value)
 
-            diff_stocks = target_stocks_val - stock_value
-            diff_crypto = target_crypto_val - crypto_value
-            diff_cash   = target_cash_val   - cash_value
+        _rebal_card(rb2, "ETFs", etf_value, etf_target, etf_diff, "#27ae7a",
+                    f"({etf_pct:.0f}% of investments)")
+        _rebal_card(rb3, "Stocks + Crypto", stock_value + crypto_value, stock_crypto_target, stock_crypto_diff, "#7a9fc4",
+                    f"({stock_crypto_pct:.0f}% of investments)")
 
-            def _rebal_card(col, label, current, target_val, diff, border_color, tgt_pct, is_cash=False):
-                if abs(diff) <= 1:
-                    action, action_col = "✓  OK", "#5c5a54"
-                elif is_cash:
-                    action = f"ADD  €{abs(diff):,.0f}" if diff > 0 else f"WITHDRAW  €{abs(diff):,.0f}"
-                    action_col = "#27ae7a" if diff > 0 else "#c94c4c"
-                else:
-                    action = f"BUY  €{abs(diff):,.0f}" if diff > 0 else f"SELL  €{abs(diff):,.0f}"
-                    action_col = "#27ae7a" if diff > 0 else "#c94c4c"
-                pct_now = current / total_value * 100 if total_value > 0 else 0
-                col.markdown(
-                    f"<div style='background:#0c1120; border:1px solid #192138; border-left:3px solid {border_color}; border-radius:6px; padding:1rem 1.2rem; height:100%;'>"
-                    f"<div style='font-family:Inter; font-size:0.6rem; text-transform:uppercase; letter-spacing:0.12em; color:#5c5a54; margin-bottom:0.4rem;'>{label}</div>"
-                    f"<div style='font-family:Inter; font-size:0.82rem; color:#f0ece0; margin-bottom:0.1rem;'>Now: <b>€{current:,.0f}</b> ({pct_now:.1f}%)</div>"
-                    f"<div style='font-family:Inter; font-size:0.78rem; color:#a8a49a; margin-bottom:0.5rem;'>Target: €{target_val:,.0f} ({tgt_pct:.1f}%)</div>"
-                    f"<div style='font-family:Ropa Sans, sans-serif; font-size:1.3rem; color:{action_col}; letter-spacing:0.03em;'>{action}</div>"
-                    f"</div>",
-                    unsafe_allow_html=True
+        st.markdown("<div style='height:1rem'></div>", unsafe_allow_html=True)
+
+        # ── Concentration alerts ──
+        if not portfolio_df.empty and investments_value > 0:
+            st.markdown("<h3>Concentration Check</h3>", unsafe_allow_html=True)
+            st.markdown(
+                f"<p style='font-family:Inter; font-size:0.78rem; color:#a8a49a; margin-bottom:0.75rem;'>"
+                f"Max allowed per individual stock or crypto: <b style='color:#c9a84c;'>{max_single_pct:.1f}%</b> "
+                f"of investments (= €{investments_value * max_single_pct / 100:,.0f})</p>",
+                unsafe_allow_html=True
+            )
+            conc_rows = []
+            for _, row in portfolio_df.iterrows():
+                cat = get_category(str(row['Ticker']))
+                if cat in ('Stock', 'Crypto'):
+                    pct_of_inv = row['Value'] / investments_value * 100 if investments_value > 0 else 0
+                    limit_val  = investments_value * max_single_pct / 100
+                    over       = row['Value'] - limit_val
+                    conc_rows.append({
+                        'Ticker':         row['Ticker'],
+                        'Category':       cat,
+                        'Value (€)':      row['Value'],
+                        '% of Investments': pct_of_inv,
+                        'Limit (€)':      limit_val,
+                        'Over limit (€)': max(over, 0.0),
+                        'Status':         f"⚠ TRIM €{over:,.0f}" if over > 1 else "✓ OK",
+                    })
+            if conc_rows:
+                conc_df = pd.DataFrame(conc_rows)
+                st.dataframe(
+                    conc_df.style
+                    .format({'Value (€)': '€{:.2f}', '% of Investments': '{:.1f}%',
+                             'Limit (€)': '€{:.2f}', 'Over limit (€)': '€{:.2f}'})
+                    .applymap(lambda v: 'color:#c94c4c' if isinstance(v, str) and '⚠' in v else '',
+                              subset=['Status']),
+                    use_container_width=True
                 )
-
-            rb1, rb2, rb3 = st.columns(3)
-            _rebal_card(rb1, "Stocks / ETF", stock_value, target_stocks_val, diff_stocks, "#27ae7a", tgt_stocks)
-            _rebal_card(rb2, "Crypto",       crypto_value, target_crypto_val, diff_crypto, "#c9a84c", tgt_crypto)
-            _rebal_card(rb3, "Cash & Banks", cash_value,  target_cash_val,  diff_cash,   "#7a9fc4", tgt_cash, is_cash=True)
-            st.markdown("<div style='height:1rem'></div>", unsafe_allow_html=True)
-
-            # Per-asset breakdown within each category
-            if not portfolio_df.empty:
-                st.markdown("<p style='font-family:Inter; font-size:0.75rem; color:#5c5a54; margin-bottom:0.5rem;'>Per-asset suggestions (proportional to current holdings within each category):</p>", unsafe_allow_html=True)
-
-                rows = []
-                for _, row in portfolio_df.iterrows():
-                    t = row['Ticker']
-                    is_crypto = alloc_df[alloc_df['Asset'] == t]['Value'].sum() > 0 and crypto_mask[alloc_df['Asset'] == t].any() if len(alloc_df[alloc_df['Asset'] == t]) > 0 else False
-                    cat_val   = crypto_value if is_crypto else stock_value
-                    cat_diff  = diff_crypto  if is_crypto else diff_stocks
-                    share     = row['Value'] / cat_val if cat_val > 0 else 0
-                    suggestion = cat_diff * share
-                    if abs(suggestion) > 1:
-                        action = "Buy" if suggestion > 0 else "Sell"
-                        units  = abs(suggestion) / row['Current Price'] if row['Current Price'] > 0 else 0
-                        rows.append({
-                            'Ticker': t,
-                            'Category': 'Crypto' if is_crypto else 'Stocks / ETF',
-                            'Action': action,
-                            'Amount (€)': abs(suggestion),
-                            'Units': units,
-                        })
-
-                if rows:
-                    breakdown_df = pd.DataFrame(rows)
-                    st.dataframe(
-                        breakdown_df.style.format({'Amount (€)': '€{:.2f}', 'Units': '{:.6f}'}),
-                        use_container_width=True
-                    )
 
 # -------------------------
 # Tab: Historical Price Charts
