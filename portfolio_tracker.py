@@ -269,14 +269,27 @@ st.markdown("""
     /* ── Mobile ── */
     @media (max-width: 768px) {
         .main .block-container {
-            padding-left: 0.75rem !important;
-            padding-right: 0.75rem !important;
+            padding-left: 0.6rem !important;
+            padding-right: 0.6rem !important;
         }
-        [data-testid="stMetricValue"] { font-size: 1.2rem !important; }
+        [data-testid="stMetricValue"] { font-size: 1.1rem !important; }
+        [data-testid="stMetricLabel"] p { font-size: 0.56rem !important; }
+        [data-testid="stMetric"] { padding: 0.7rem 0.8rem !important; }
         .stTabs [role="tab"] {
-            font-size: 0.66rem !important;
-            padding: 0.7rem 0.55rem !important;
+            font-size: 0.6rem !important;
+            padding: 0.65rem 0.4rem !important;
+            letter-spacing: 0.04em !important;
         }
+        /* Header bar: stack vertically on mobile */
+        .main .block-container > div:first-child div[style*="display:flex"] {
+            flex-direction: column !important;
+            align-items: flex-start !important;
+        }
+        /* Sidebar inputs full width */
+        .stNumberInput, .stTextInput, .stSelectbox { width: 100% !important; }
+        /* Reduce h1/h2 sizes */
+        h1 { font-size: 1.3rem !important; }
+        h2 { font-size: 0.95rem !important; }
     }
 </style>
 """, unsafe_allow_html=True)
@@ -487,6 +500,38 @@ def delete_cashflow_db(cf_id):
 # -------------------------
 # Allocation Targets
 # -------------------------
+# -------------------------
+# Planning Settings
+# -------------------------
+def load_planning_settings():
+    default = {'hourly_rate': 0.0, 'goal_amount': 100000.0, 'target_date': '2030-01-01'}
+    try:
+        res = supabase.table('planning_settings').select('*').eq('id', 1).execute()
+        if res.data:
+            row = res.data[0]
+            return {
+                'hourly_rate': float(row.get('hourly_rate', 0.0)),
+                'goal_amount': float(row.get('goal_amount', 100000.0)),
+                'target_date': str(row.get('target_date', '2030-01-01')),
+            }
+        supabase.table('planning_settings').insert({'id': 1, **default}).execute()
+        return default
+    except Exception:
+        return default
+
+def save_planning_settings(hourly_rate, goal_amount, target_date):
+    try:
+        supabase.table('planning_settings').upsert({
+            'id': 1,
+            'hourly_rate': float(hourly_rate),
+            'goal_amount': float(goal_amount),
+            'target_date': target_date.isoformat() if hasattr(target_date, 'isoformat') else str(target_date),
+        }).execute()
+        return True
+    except Exception as e:
+        st.error(f"Error saving planning settings: {e}")
+        return False
+
 def load_allocation_targets():
     default = {'etf_pct': 50.0, 'max_single_pct': 5.0}
     try:
@@ -590,6 +635,9 @@ if "allocation_targets" not in st.session_state:
 
 if "asset_categories" not in st.session_state:
     st.session_state.asset_categories = load_asset_categories()
+
+if "planning_settings" not in st.session_state:
+    st.session_state.planning_settings = load_planning_settings()
 
 # -------------------------
 # Sidebar - Balances
@@ -1150,12 +1198,13 @@ with _rcol2:
 # -------------------------
 # Navigation tabs
 # -------------------------
-tab_overview, tab_history, tab_cashflow, tab_allocation, tab_charts = st.tabs([
+tab_overview, tab_history, tab_cashflow, tab_allocation, tab_charts, tab_planning = st.tabs([
     "Overview",
     "History",
     "Cashflow",
     "Allocation",
-    "Charts"
+    "Charts",
+    "Planning"
 ])
 
 # -------------------------
@@ -1801,6 +1850,164 @@ with tab_charts:
                 st.warning(f"No historical data available for {selected_ticker}. Check ticker symbol or Yahoo Finance support.")
     else:
         st.info("Add transactions to your portfolio to view historical charts.")
+
+# -------------------------
+# Tab: Planning
+# -------------------------
+with tab_planning:
+    st.markdown("<h2><span class='material-symbols-outlined' style='font-size:20px;'>rocket_launch</span> Planning</h2>", unsafe_allow_html=True)
+
+    plan = st.session_state.planning_settings
+
+    # ── Settings ──
+    st.markdown("<h3>Your Settings</h3>", unsafe_allow_html=True)
+    pc1, pc2, pc3 = st.columns(3)
+    with pc1:
+        hourly_rate = st.number_input("Hourly Rate (€/hr)", min_value=0.0,
+            value=float(plan.get('hourly_rate', 0.0)), step=0.5, format="%.2f", key="plan_rate")
+    with pc2:
+        goal_amount = st.number_input("Net Worth Goal (€)", min_value=0.0,
+            value=float(plan.get('goal_amount', 100000.0)), step=1000.0, format="%.0f", key="plan_goal")
+    with pc3:
+        _td_default = pd.to_datetime(plan.get('target_date', '2030-01-01')).date()
+        target_date = st.date_input("Target Date", value=_td_default, key="plan_date")
+
+    if st.button("Save Settings", key="plan_save"):
+        if save_planning_settings(hourly_rate, goal_amount, target_date):
+            st.session_state.planning_settings = {
+                'hourly_rate': hourly_rate,
+                'goal_amount': goal_amount,
+                'target_date': str(target_date)
+            }
+            st.success("Settings saved!")
+
+    if hourly_rate > 0 and goal_amount > 0:
+        st.markdown("---")
+
+        # ── Current net worth ──
+        _pf, _, _, _, _ = compute_portfolio()
+        _assets = _pf["Value"].sum() if not _pf.empty else 0.0
+        _cb = st.session_state.balances.get("cash_balance", 0.0)
+        _cr = st.session_state.balances.get("credit_mutuel_balance", 0.0)
+        _ci = st.session_state.balances.get("cic_balance", 0.0)
+        current_nw = _assets + _cb + _cr + _ci
+        remaining  = max(goal_amount - current_nw, 0.0)
+        progress   = min(current_nw / goal_amount * 100, 100.0) if goal_amount > 0 else 0.0
+
+        # ── Months remaining ──
+        _today = datetime.now(ZoneInfo("Europe/Amsterdam")).date()
+        _td    = pd.to_datetime(str(target_date)).date()
+        months_remaining = max((_td.year - _today.year) * 12 + (_td.month - _today.month), 1)
+
+        # ── Monthly expenses from cashflow ──
+        monthly_expenses = 0.0
+        if not st.session_state.cashflow.empty:
+            monthly_expenses = abs(float(
+                st.session_state.cashflow.loc[st.session_state.cashflow['Amount'] < 0, 'Amount'].sum()
+            ))
+
+        monthly_invest_needed  = remaining / months_remaining
+        total_monthly_needed   = monthly_expenses + monthly_invest_needed
+        hours_expenses         = monthly_expenses       / hourly_rate
+        hours_investment       = monthly_invest_needed  / hourly_rate
+        hours_total            = total_monthly_needed   / hourly_rate
+
+        # ── Progress bar ──
+        _pg_col = "#27ae7a" if progress >= 80 else "#c9a84c" if progress >= 40 else "#c94c4c"
+        st.markdown(
+            f"<div style='margin-bottom:1.5rem;'>"
+            f"<div style='display:flex; justify-content:space-between; font-family:Inter; font-size:0.72rem; color:#a8a49a; margin-bottom:0.4rem;'>"
+            f"<span>Net Worth Progress</span><span style='color:{_pg_col};'>{progress:.1f}%</span></div>"
+            f"<div style='background:#192138; border-radius:4px; height:10px;'>"
+            f"<div style='background:{_pg_col}; width:{progress:.1f}%; height:10px; border-radius:4px; transition:width 0.3s;'></div>"
+            f"</div>"
+            f"<div style='display:flex; justify-content:space-between; font-family:Inter; font-size:0.68rem; color:#5c5a54; margin-top:0.3rem;'>"
+            f"<span>€{current_nw:,.0f} now</span><span>€{goal_amount:,.0f} goal</span></div>"
+            f"</div>",
+            unsafe_allow_html=True
+        )
+
+        # ── Key metrics ──
+        m1, m2, m3 = st.columns(3)
+        m1.metric("Remaining to goal", f"€{remaining:,.0f}")
+        m2.metric("Months to target date", str(months_remaining))
+        m3.metric("Monthly investment needed", f"€{monthly_invest_needed:,.0f}")
+
+        # ── Work hours breakdown ──
+        st.markdown("<h3 style='margin-top:1.2rem;'>How much do you need to work this month?</h3>", unsafe_allow_html=True)
+
+        def _hour_card(col, label, hours, euros, border_color, detail=""):
+            days = hours / 8
+            col.markdown(
+                f"<div style='background:#0c1120; border:1px solid #192138; border-left:3px solid {border_color}; border-radius:6px; padding:1rem 1.2rem;'>"
+                f"<div style='font-family:Inter; font-size:0.6rem; text-transform:uppercase; letter-spacing:0.12em; color:#5c5a54; margin-bottom:0.3rem;'>{label}</div>"
+                f"<div style='font-family:Ropa Sans, sans-serif; font-size:1.6rem; color:#f0ece0; letter-spacing:0.03em;'>{hours:.0f} hrs</div>"
+                f"<div style='font-family:Inter; font-size:0.75rem; color:#a8a49a; margin-top:0.1rem;'>≈ {days:.1f} days &nbsp;·&nbsp; €{euros:,.0f}</div>"
+                f"{'<div style=\"font-family:Inter; font-size:0.68rem; color:#5c5a54; margin-top:0.2rem;\">' + detail + '</div>' if detail else ''}"
+                f"</div>",
+                unsafe_allow_html=True
+            )
+
+        h1, h2, h3 = st.columns(3)
+        _hour_card(h1, "To cover expenses",   hours_expenses,   monthly_expenses,      "#c94c4c", f"€{monthly_expenses:,.0f}/mo expenses")
+        _hour_card(h2, "To hit invest target", hours_investment, monthly_invest_needed, "#27ae7a", f"€{monthly_invest_needed:,.0f}/mo investment")
+        _hour_card(h3, "Total this month",     hours_total,      total_monthly_needed,  "#c9a84c", f"€{hourly_rate:.0f}/hr × {hours_total:.0f} hrs")
+
+        # ── Monthly investment history ──
+        st.markdown("---")
+        st.markdown("<h3>Monthly Investment History</h3>", unsafe_allow_html=True)
+
+        if not st.session_state.transactions.empty:
+            _buy_tx = st.session_state.transactions[
+                st.session_state.transactions['Type'] == 'Buy'
+            ].copy()
+            if not _buy_tx.empty:
+                _buy_tx['Date'] = pd.to_datetime(_buy_tx['Date'], errors='coerce')
+                _buy_tx['YearMonth'] = _buy_tx['Date'].dt.to_period('M')
+                _buy_tx['Invested'] = _buy_tx['Quantity'] * _buy_tx['Purchase Price'] + _buy_tx['Fee Amount'].clip(lower=0)
+                _monthly = _buy_tx.groupby('YearMonth')['Invested'].sum().reset_index()
+                _monthly['Month'] = _monthly['YearMonth'].dt.to_timestamp()
+                _monthly = _monthly.sort_values('Month')
+
+                _fig_dca = go.Figure()
+                _fig_dca.add_trace(go.Bar(
+                    x=_monthly['Month'], y=_monthly['Invested'],
+                    name='Invested', marker_color='#c9a84c',
+                    hovertemplate='%{x|%b %Y}<br>€%{y:,.0f}<extra></extra>'
+                ))
+                _fig_dca.add_hline(
+                    y=monthly_invest_needed, line_dash="dash", line_color="#27ae7a",
+                    annotation_text=f"Target €{monthly_invest_needed:,.0f}/mo",
+                    annotation_font=dict(family="Inter", color="#27ae7a", size=11),
+                    annotation_position="top left"
+                )
+                _fig_dca.update_layout(
+                    plot_bgcolor="#080c18", paper_bgcolor="#080c18",
+                    font=dict(family="Inter", color="#5c5a54", size=11),
+                    xaxis=dict(gridcolor="#192138", linecolor="#192138", tickfont=dict(color="#5c5a54")),
+                    yaxis=dict(gridcolor="#192138", linecolor="#192138", tickfont=dict(color="#5c5a54"), title="€ Invested"),
+                    margin=dict(l=10, r=10, t=40, b=10),
+                    hovermode="x unified",
+                    hoverlabel=dict(bgcolor="#0c1120", bordercolor="#192138", font=dict(family="Inter", color="#f0ece0", size=12)),
+                    title=dict(text="Monthly Investments vs Target", font=dict(family="Ropa Sans", color="#f0ece0", size=15), x=0),
+                    showlegend=False,
+                )
+                st.plotly_chart(_fig_dca, use_container_width=True)
+
+                # summary row
+                _avg_monthly = _monthly['Invested'].mean()
+                _on_target   = int((_monthly['Invested'] >= monthly_invest_needed).sum())
+                _total_months = len(_monthly)
+                s1, s2, s3 = st.columns(3)
+                s1.metric("Avg monthly invested", f"€{_avg_monthly:,.0f}")
+                s2.metric("Months on target", f"{_on_target} / {_total_months}")
+                s3.metric("Total invested (Buy)", f"€{_monthly['Invested'].sum():,.0f}")
+            else:
+                st.info("No Buy transactions yet.")
+        else:
+            st.info("No transactions yet.")
+    else:
+        st.info("Set your hourly rate and goal above to see your plan.")
 
 # -------------------------
 # Footer

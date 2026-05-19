@@ -62,6 +62,14 @@ CREATE TABLE IF NOT EXISTS asset_categories (
   category TEXT NOT NULL CHECK (category IN ('ETF', 'Stock', 'Crypto'))
 );
 
+CREATE TABLE IF NOT EXISTS planning_settings (
+  id INTEGER PRIMARY KEY DEFAULT 1,
+  hourly_rate FLOAT DEFAULT 0,
+  goal_amount FLOAT DEFAULT 100000,
+  target_date DATE DEFAULT '2030-01-01',
+  CONSTRAINT single_row_planning CHECK (id = 1)
+);
+
 -- RLS
 ALTER TABLE public.allocation_targets ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.asset_categories ENABLE ROW LEVEL SECURITY;
