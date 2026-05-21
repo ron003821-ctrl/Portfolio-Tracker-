@@ -2095,6 +2095,7 @@ with tab_planning:
     with pc3:
         _td_default = pd.to_datetime(plan.get('target_date', '2030-01-01')).date()
         target_date = st.date_input("Target Date", value=_td_default,
+            min_value=date(2024, 1, 1), max_value=date(2100, 12, 31),
             key="plan_date", on_change=_autosave_plan)
     with pc4:
         expected_return = st.number_input("Expected Annual Return (%)", min_value=0.0, max_value=50.0,
