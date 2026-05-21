@@ -586,18 +586,27 @@ def load_planning_settings():
         return default
 
 def save_planning_settings(hourly_rate, goal_amount, target_date, expected_return):
+    _td = target_date.isoformat() if hasattr(target_date, 'isoformat') else str(target_date)
+    full_data = {
+        'id': 1,
+        'hourly_rate':     float(hourly_rate),
+        'goal_amount':     float(goal_amount),
+        'target_date':     _td,
+        'expected_return': float(expected_return),
+    }
     try:
-        supabase.table('planning_settings').upsert({
-            'id': 1,
-            'hourly_rate':     float(hourly_rate),
-            'goal_amount':     float(goal_amount),
-            'target_date':     target_date.isoformat() if hasattr(target_date, 'isoformat') else str(target_date),
-            'expected_return': float(expected_return),
-        }).execute()
+        supabase.table('planning_settings').upsert(full_data).execute()
         return True
-    except Exception as e:
-        st.error(f"Error saving planning settings: {e}")
-        return False
+    except Exception:
+        # Fallback: expected_return column may not exist yet — save without it
+        try:
+            supabase.table('planning_settings').upsert({
+                k: v for k, v in full_data.items() if k != 'expected_return'
+            }).execute()
+            return True
+        except Exception as e:
+            st.error(f"Error saving planning settings: {e}")
+            return False
 
 def load_allocation_targets():
     default = {'etf_pct': 50.0, 'max_single_pct': 5.0}
@@ -2056,30 +2065,42 @@ with tab_planning:
 
     plan = st.session_state.planning_settings
 
-    # ── Settings ──
-    st.markdown("<h3>Your Settings</h3>", unsafe_allow_html=True)
+    # ── Auto-save callback (fires when any widget value changes) ──
+    def _autosave_plan():
+        _hr = float(st.session_state.get('plan_rate', 0.0))
+        _ga = float(st.session_state.get('plan_goal', 100000.0))
+        _td = st.session_state.get('plan_date', date(2030, 1, 1))
+        _er = float(st.session_state.get('plan_return', 7.0))
+        if save_planning_settings(_hr, _ga, _td, _er):
+            st.session_state.planning_settings = {
+                'hourly_rate': _hr, 'goal_amount': _ga,
+                'target_date': str(_td), 'expected_return': _er,
+            }
+
+    # ── Settings (auto-saved on change — no button needed) ──
+    st.markdown(
+        "<h3 style='display:inline;'>Your Settings</h3>"
+        "<span style='font-family:Inter; font-size:0.7rem; color:#5c5a54; margin-left:0.8rem;'>auto-saved</span>",
+        unsafe_allow_html=True
+    )
     pc1, pc2, pc3, pc4 = st.columns(4)
     with pc1:
         hourly_rate = st.number_input("Hourly Rate (€/hr)", min_value=0.0,
-            value=float(plan.get('hourly_rate', 0.0)), step=0.5, format="%.2f", key="plan_rate")
+            value=float(plan.get('hourly_rate', 0.0)), step=0.5, format="%.2f",
+            key="plan_rate", on_change=_autosave_plan)
     with pc2:
         goal_amount = st.number_input("Net Worth Goal (€)", min_value=0.0,
-            value=float(plan.get('goal_amount', 100000.0)), step=1000.0, format="%.0f", key="plan_goal")
+            value=float(plan.get('goal_amount', 100000.0)), step=1000.0, format="%.0f",
+            key="plan_goal", on_change=_autosave_plan)
     with pc3:
         _td_default = pd.to_datetime(plan.get('target_date', '2030-01-01')).date()
-        target_date = st.date_input("Target Date", value=_td_default, key="plan_date")
+        target_date = st.date_input("Target Date", value=_td_default,
+            key="plan_date", on_change=_autosave_plan)
     with pc4:
         expected_return = st.number_input("Expected Annual Return (%)", min_value=0.0, max_value=50.0,
-            value=float(plan.get('expected_return', 7.0)), step=0.5, format="%.1f", key="plan_return",
+            value=float(plan.get('expected_return', 7.0)), step=0.5, format="%.1f",
+            key="plan_return", on_change=_autosave_plan,
             help="Expected yearly growth of your investments (e.g. 7% for a typical ETF portfolio)")
-
-    if st.button("Save Settings", key="plan_save"):
-        if save_planning_settings(hourly_rate, goal_amount, target_date, expected_return):
-            st.session_state.planning_settings = {
-                'hourly_rate': hourly_rate, 'goal_amount': goal_amount,
-                'target_date': str(target_date), 'expected_return': expected_return
-            }
-            st.success("Settings saved!")
 
     if hourly_rate > 0 and goal_amount > 0:
         st.markdown("---")
