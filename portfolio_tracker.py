@@ -1342,42 +1342,48 @@ _profit_sign  = "+" if total_profit >= 0 else ""
 _pct_sign     = "+" if profit_percentage >= 0 else ""
 _today_str    = datetime.now(ZoneInfo("Europe/Amsterdam")).strftime("%d %b %Y").upper()
 
-_debt_block = (
-    f"<div style='text-align:right;'>"
-    f"<div style='font-family:\"Inter\",sans-serif; font-size:0.6rem; letter-spacing:0.14em; color:#5c5a54; text-transform:uppercase; margin-bottom:0.25rem;'>Debt</div>"
-    f"<div style='font-family:\"Ropa Sans\",sans-serif; font-size:1.5rem; color:#c94c4c; letter-spacing:0.03em;'>−€{_total_debt:,.0f}</div>"
-    f"</div>"
-) if _total_debt > 0 else ""
+# Use CSS display to show/hide the debt block — avoids injecting HTML into the f-string
+_debt_display  = 'block' if _total_debt > 0 else 'none'
+_debt_str      = f"-€{_total_debt:,.0f}"   # unicode minus + euro sign, no curly braces
 
-st.markdown(f"""
-<div style='background:#0c1120; border-bottom:1px solid #192138; padding:1.4rem 1.5rem 1.2rem; margin:-0 -1.5rem 0; display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:1rem;'>
-    <div>
-        <div style='font-family:"Ropa Sans",sans-serif; font-size:1.6rem; letter-spacing:0.08em; color:#f0ece0; line-height:1;'>PORTFOLIO</div>
-        <div style='width:36px; height:2px; background:#c9a84c; margin:0.4rem 0 0.3rem;'></div>
-        <div style='font-family:"Inter",sans-serif; font-size:0.6rem; letter-spacing:0.2em; color:#5c5a54; text-transform:uppercase;'>{_today_str}</div>
-    </div>
-    <div style='display:flex; gap:2.5rem; flex-wrap:wrap;'>
-        <div style='text-align:right;'>
-            <div style='font-family:"Inter",sans-serif; font-size:0.6rem; letter-spacing:0.14em; color:#5c5a54; text-transform:uppercase; margin-bottom:0.25rem;'>Total Assets</div>
-            <div style='font-family:"Ropa Sans",sans-serif; font-size:1.5rem; color:#f0ece0; letter-spacing:0.03em;'>€{_total_value:,.0f}</div>
-        </div>
-        {_debt_block}
-        <div style='text-align:right;'>
-            <div style='font-family:"Inter",sans-serif; font-size:0.6rem; letter-spacing:0.14em; color:#5c5a54; text-transform:uppercase; margin-bottom:0.25rem;'>Net Worth</div>
-            <div style='font-family:"Ropa Sans",sans-serif; font-size:1.5rem; color:#f0ece0; letter-spacing:0.03em;'>€{_net_worth:,.0f}</div>
-        </div>
-        <div style='text-align:right;'>
-            <div style='font-family:"Inter",sans-serif; font-size:0.6rem; letter-spacing:0.14em; color:#5c5a54; text-transform:uppercase; margin-bottom:0.25rem;'>Total P&L</div>
-            <div style='font-family:"Ropa Sans",sans-serif; font-size:1.5rem; color:{_profit_color}; letter-spacing:0.03em;'>{_profit_sign}€{total_profit:,.0f}</div>
-        </div>
-        <div style='text-align:right;'>
-            <div style='font-family:"Inter",sans-serif; font-size:0.6rem; letter-spacing:0.14em; color:#5c5a54; text-transform:uppercase; margin-bottom:0.25rem;'>Return</div>
-            <div style='font-family:"Ropa Sans",sans-serif; font-size:1.5rem; color:{_profit_color}; letter-spacing:0.03em;'>{_pct_sign}{profit_percentage:.1f}%</div>
-        </div>
-    </div>
-</div>
-<div style='height:3px; background:linear-gradient(90deg,#c9a84c 0%,rgba(201,168,76,0.15) 60%,transparent 100%);'></div>
-""", unsafe_allow_html=True)
+_header_parts = [
+    "<div style='background:#0c1120; border-bottom:1px solid #192138; padding:1.4rem 1.5rem 1.2rem; margin:-0 -1.5rem 0; display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:1rem;'>",
+    "  <div>",
+    "    <div style='font-family:\"Ropa Sans\",sans-serif; font-size:1.6rem; letter-spacing:0.08em; color:#f0ece0; line-height:1;'>PORTFOLIO</div>",
+    "    <div style='width:36px; height:2px; background:#c9a84c; margin:0.4rem 0 0.3rem;'></div>",
+    f"    <div style='font-family:\"Inter\",sans-serif; font-size:0.6rem; letter-spacing:0.2em; color:#5c5a54; text-transform:uppercase;'>{_today_str}</div>",
+    "  </div>",
+    "  <div style='display:flex; gap:2.5rem; flex-wrap:wrap;'>",
+    # Total Assets
+    "    <div style='text-align:right;'>",
+    "      <div style='font-family:\"Inter\",sans-serif; font-size:0.6rem; letter-spacing:0.14em; color:#5c5a54; text-transform:uppercase; margin-bottom:0.25rem;'>Total Assets</div>",
+    f"      <div style='font-family:\"Ropa Sans\",sans-serif; font-size:1.5rem; color:#f0ece0; letter-spacing:0.03em;'>€{_total_value:,.0f}</div>",
+    "    </div>",
+    # Debt (hidden with CSS when no loans)
+    f"    <div style='text-align:right; display:{_debt_display};'>",
+    "      <div style='font-family:\"Inter\",sans-serif; font-size:0.6rem; letter-spacing:0.14em; color:#5c5a54; text-transform:uppercase; margin-bottom:0.25rem;'>Debt</div>",
+    f"      <div style='font-family:\"Ropa Sans\",sans-serif; font-size:1.5rem; color:#c94c4c; letter-spacing:0.03em;'>{_debt_str}</div>",
+    "    </div>",
+    # Net Worth
+    "    <div style='text-align:right;'>",
+    "      <div style='font-family:\"Inter\",sans-serif; font-size:0.6rem; letter-spacing:0.14em; color:#5c5a54; text-transform:uppercase; margin-bottom:0.25rem;'>Net Worth</div>",
+    f"      <div style='font-family:\"Ropa Sans\",sans-serif; font-size:1.5rem; color:#f0ece0; letter-spacing:0.03em;'>€{_net_worth:,.0f}</div>",
+    "    </div>",
+    # Total P&L
+    "    <div style='text-align:right;'>",
+    "      <div style='font-family:\"Inter\",sans-serif; font-size:0.6rem; letter-spacing:0.14em; color:#5c5a54; text-transform:uppercase; margin-bottom:0.25rem;'>Total P&amp;L</div>",
+    f"      <div style='font-family:\"Ropa Sans\",sans-serif; font-size:1.5rem; color:{_profit_color}; letter-spacing:0.03em;'>{_profit_sign}€{total_profit:,.0f}</div>",
+    "    </div>",
+    # Return
+    "    <div style='text-align:right;'>",
+    "      <div style='font-family:\"Inter\",sans-serif; font-size:0.6rem; letter-spacing:0.14em; color:#5c5a54; text-transform:uppercase; margin-bottom:0.25rem;'>Return</div>",
+    f"      <div style='font-family:\"Ropa Sans\",sans-serif; font-size:1.5rem; color:{_profit_color}; letter-spacing:0.03em;'>{_pct_sign}{profit_percentage:.1f}%</div>",
+    "    </div>",
+    "  </div>",
+    "</div>",
+    "<div style='height:3px; background:linear-gradient(90deg,#c9a84c 0%,rgba(201,168,76,0.15) 60%,transparent 100%);'></div>",
+]
+st.markdown("\n".join(_header_parts), unsafe_allow_html=True)
 
 st.markdown("<div style='height:0.5rem;'></div>", unsafe_allow_html=True)
 _rcol1, _rcol2 = st.columns([6, 1])
