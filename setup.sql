@@ -74,6 +74,16 @@ CREATE TABLE IF NOT EXISTS planning_settings (
 -- If the table already exists, run this to add the new column:
 ALTER TABLE public.planning_settings ADD COLUMN IF NOT EXISTS expected_return FLOAT DEFAULT 7;
 
+CREATE TABLE IF NOT EXISTS loans (
+  id BIGSERIAL PRIMARY KEY,
+  name TEXT NOT NULL DEFAULT 'Loan',
+  principal FLOAT DEFAULT 0,
+  annual_rate FLOAT DEFAULT 0,
+  monthly_payment FLOAT DEFAULT 0,
+  start_date DATE NOT NULL DEFAULT CURRENT_DATE,
+  notes TEXT DEFAULT ''
+);
+
 -- RLS
 ALTER TABLE public.allocation_targets ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.asset_categories ENABLE ROW LEVEL SECURITY;

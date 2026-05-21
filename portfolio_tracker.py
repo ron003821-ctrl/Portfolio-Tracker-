@@ -651,6 +651,74 @@ def get_category(ticker: str) -> str:
     return overrides.get(ticker, auto_detect_category(ticker))
 
 # -------------------------
+# Loans (Liabilities)
+# -------------------------
+def load_loans() -> pd.DataFrame:
+    try:
+        res = supabase.table('loans').select('*').order('id').execute()
+        if res.data:
+            df = pd.DataFrame(res.data)
+            df = df.rename(columns={
+                'id': 'id', 'name': 'Name', 'principal': 'Principal',
+                'annual_rate': 'Annual Rate', 'monthly_payment': 'Monthly Payment',
+                'start_date': 'Start Date', 'notes': 'Notes',
+            })
+            for col in ['Principal', 'Annual Rate', 'Monthly Payment']:
+                df[col] = pd.to_numeric(df[col], errors='coerce').fillna(0.0)
+            return df
+    except Exception:
+        pass
+    return pd.DataFrame(columns=['id', 'Name', 'Principal', 'Annual Rate', 'Monthly Payment', 'Start Date', 'Notes'])
+
+def add_loan_db(name, principal, annual_rate, monthly_payment, start_date, notes='') -> bool:
+    try:
+        supabase.table('loans').insert({
+            'name': str(name),
+            'principal': float(principal),
+            'annual_rate': float(annual_rate),
+            'monthly_payment': float(monthly_payment),
+            'start_date': str(start_date),
+            'notes': str(notes),
+        }).execute()
+        return True
+    except Exception as e:
+        st.error(f"Error adding loan: {e}")
+        return False
+
+def delete_loan_db(loan_id: int) -> bool:
+    try:
+        supabase.table('loans').delete().eq('id', int(loan_id)).execute()
+        return True
+    except Exception as e:
+        st.error(f"Error deleting loan: {e}")
+        return False
+
+def calc_loan_balance(principal: float, annual_rate: float, monthly_payment: float, start_date) -> float:
+    """Remaining balance today using standard loan amortisation formula."""
+    _today = datetime.now(ZoneInfo("Europe/Amsterdam")).date()
+    _start = pd.to_datetime(str(start_date)).date()
+    months = max((_today.year - _start.year) * 12 + (_today.month - _start.month), 0)
+    r = annual_rate / 100 / 12  # monthly rate
+    if r == 0:
+        return max(float(principal) - float(monthly_payment) * months, 0.0)
+    factor = (1 + r) ** months
+    balance = float(principal) * factor - float(monthly_payment) * (factor - 1) / r
+    return max(balance, 0.0)
+
+def get_loans_summary() -> dict:
+    """Total remaining debt and total monthly repayments across all loans."""
+    loans = st.session_state.get('loans', pd.DataFrame())
+    if loans.empty:
+        return {'total_debt': 0.0, 'monthly_repayments': 0.0}
+    total_debt = sum(
+        calc_loan_balance(row['Principal'], row['Annual Rate'],
+                          row['Monthly Payment'], row['Start Date'])
+        for _, row in loans.iterrows()
+    )
+    monthly = float(loans['Monthly Payment'].sum())
+    return {'total_debt': total_debt, 'monthly_repayments': monthly}
+
+# -------------------------
 # Login
 # -------------------------
 if "logged_in" not in st.session_state:
@@ -705,6 +773,9 @@ if "asset_categories" not in st.session_state:
 
 if "planning_settings" not in st.session_state:
     st.session_state.planning_settings = load_planning_settings()
+
+if "loans" not in st.session_state:
+    st.session_state.loans = load_loans()
 
 # -------------------------
 # Sidebar - Balances
@@ -934,6 +1005,44 @@ with st.sidebar.expander("Cashflow Tracker", expanded=False):
                 st.rerun()
     else:
         st.info("No entries yet. Add one above.")
+
+# ─── Loans sidebar ───
+with st.sidebar.expander("Loans / Debt", expanded=False):
+    st.subheader("Add a Loan")
+    loan_name      = st.text_input("Loan name", placeholder="Student Loan 2025", key="loan_name_in")
+    loan_principal = st.number_input("Total amount borrowed (€)", min_value=0.0, step=100.0, format="%.2f", key="loan_principal_in")
+    loan_rate      = st.number_input("Annual interest rate (%)", min_value=0.0, max_value=30.0, step=0.1, format="%.2f", key="loan_rate_in")
+    loan_payment   = st.number_input("Monthly repayment (€)", min_value=0.0, step=10.0, format="%.2f", key="loan_payment_in")
+    loan_start     = st.date_input("Start date", value=datetime.now(ZoneInfo("Europe/Amsterdam")).date(), key="loan_start_in")
+    loan_notes     = st.text_input("Notes (optional)", key="loan_notes_in")
+
+    if st.button("Add Loan", key="loan_add_btn"):
+        if loan_name and loan_principal > 0 and loan_payment > 0:
+            if add_loan_db(loan_name, loan_principal, loan_rate, loan_payment, loan_start, loan_notes):
+                st.session_state.loans = load_loans()
+                st.success(f"Loan '{loan_name}' added.")
+                st.rerun()
+        else:
+            st.warning("Please fill in name, amount, and monthly repayment.")
+
+    if not st.session_state.loans.empty:
+        st.markdown("---")
+        st.subheader("Active Loans")
+        for _, loan_row in st.session_state.loans.iterrows():
+            remaining = calc_loan_balance(
+                loan_row['Principal'], loan_row['Annual Rate'],
+                loan_row['Monthly Payment'], loan_row['Start Date']
+            )
+            st.markdown(
+                f"**{loan_row['Name']}** — €{remaining:,.0f} remaining  \n"
+                f"<span style='font-size:0.78rem; color:#5c5a54;'>"
+                f"€{loan_row['Monthly Payment']:,.0f}/mo · {loan_row['Annual Rate']:.2f}% interest</span>",
+                unsafe_allow_html=True
+            )
+            if st.button("Delete", key=f"loan_del_{loan_row['id']}"):
+                if delete_loan_db(int(loan_row['id'])):
+                    st.session_state.loans = load_loans()
+                    st.rerun()
 
 # -------------------------
 # CoinGecko helpers (for tokens not on Yahoo Finance)
@@ -1225,10 +1334,20 @@ _cash = st.session_state.balances.get("cash_balance", 0.0)
 _credit = st.session_state.balances.get("credit_mutuel_balance", 0.0)
 _cic = st.session_state.balances.get("cic_balance", 0.0)
 _total_value = _total_assets + _cash + _credit + _cic
+_loans_summary = get_loans_summary()
+_total_debt    = _loans_summary['total_debt']
+_net_worth     = _total_value - _total_debt
 _profit_color = "#27ae7a" if total_profit >= 0 else "#c94c4c"
 _profit_sign  = "+" if total_profit >= 0 else ""
 _pct_sign     = "+" if profit_percentage >= 0 else ""
 _today_str    = datetime.now(ZoneInfo("Europe/Amsterdam")).strftime("%d %b %Y").upper()
+
+_debt_block = (
+    f"<div style='text-align:right;'>"
+    f"<div style='font-family:\"Inter\",sans-serif; font-size:0.6rem; letter-spacing:0.14em; color:#5c5a54; text-transform:uppercase; margin-bottom:0.25rem;'>Debt</div>"
+    f"<div style='font-family:\"Ropa Sans\",sans-serif; font-size:1.5rem; color:#c94c4c; letter-spacing:0.03em;'>−€{_total_debt:,.0f}</div>"
+    f"</div>"
+) if _total_debt > 0 else ""
 
 st.markdown(f"""
 <div style='background:#0c1120; border-bottom:1px solid #192138; padding:1.4rem 1.5rem 1.2rem; margin:-0 -1.5rem 0; display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:1rem;'>
@@ -1239,8 +1358,13 @@ st.markdown(f"""
     </div>
     <div style='display:flex; gap:2.5rem; flex-wrap:wrap;'>
         <div style='text-align:right;'>
-            <div style='font-family:"Inter",sans-serif; font-size:0.6rem; letter-spacing:0.14em; color:#5c5a54; text-transform:uppercase; margin-bottom:0.25rem;'>Total Value</div>
+            <div style='font-family:"Inter",sans-serif; font-size:0.6rem; letter-spacing:0.14em; color:#5c5a54; text-transform:uppercase; margin-bottom:0.25rem;'>Total Assets</div>
             <div style='font-family:"Ropa Sans",sans-serif; font-size:1.5rem; color:#f0ece0; letter-spacing:0.03em;'>€{_total_value:,.0f}</div>
+        </div>
+        {_debt_block}
+        <div style='text-align:right;'>
+            <div style='font-family:"Inter",sans-serif; font-size:0.6rem; letter-spacing:0.14em; color:#5c5a54; text-transform:uppercase; margin-bottom:0.25rem;'>Net Worth</div>
+            <div style='font-family:"Ropa Sans",sans-serif; font-size:1.5rem; color:#f0ece0; letter-spacing:0.03em;'>€{_net_worth:,.0f}</div>
         </div>
         <div style='text-align:right;'>
             <div style='font-family:"Inter",sans-serif; font-size:0.6rem; letter-spacing:0.14em; color:#5c5a54; text-transform:uppercase; margin-bottom:0.25rem;'>Total P&L</div>
@@ -1954,13 +2078,16 @@ with tab_planning:
     if hourly_rate > 0 and goal_amount > 0:
         st.markdown("---")
 
-        # ── Current net worth ──
+        # ── Current net worth (assets − loans) ──
         _pf, _, _, _, _ = compute_portfolio()
         _assets = _pf["Value"].sum() if not _pf.empty else 0.0
         _cb = st.session_state.balances.get("cash_balance", 0.0)
         _cr = st.session_state.balances.get("credit_mutuel_balance", 0.0)
         _ci = st.session_state.balances.get("cic_balance", 0.0)
-        current_nw = _assets + _cb + _cr + _ci
+        _plan_loans = get_loans_summary()
+        _plan_debt  = _plan_loans['total_debt']
+        _plan_repay = _plan_loans['monthly_repayments']
+        current_nw = _assets + _cb + _cr + _ci - _plan_debt
         remaining  = max(goal_amount - current_nw, 0.0)
         progress   = min(current_nw / goal_amount * 100, 100.0) if goal_amount > 0 else 0.0
 
@@ -1993,17 +2120,23 @@ with tab_planning:
             monthly_invest_needed = remaining / months_remaining
 
         # ── Work hours calculation ──
-        # Total needed: cover expenses + hit investment target
+        # Total needed: expenses + loan repayments + investment target
         # Other income (from cashflow) already covers part of it
-        total_monthly_needed  = monthly_expenses + monthly_invest_needed
+        total_monthly_needed  = monthly_expenses + _plan_repay + monthly_invest_needed
         work_income_needed    = max(total_monthly_needed - other_monthly_income, 0.0)
         hours_total           = work_income_needed / hourly_rate if hourly_rate > 0 else 0.0
         # Breakdown: what's covered vs what needs work
-        covered_expenses      = min(other_monthly_income, monthly_expenses)
-        work_for_expenses     = max(monthly_expenses - other_monthly_income, 0.0)
-        leftover_income       = max(other_monthly_income - monthly_expenses, 0.0)
-        work_for_investment   = max(monthly_invest_needed - leftover_income, 0.0)
+        # Priority order: expenses → loan repayments → investment
+        _income_left          = other_monthly_income
+        covered_expenses      = min(_income_left, monthly_expenses)
+        work_for_expenses     = max(monthly_expenses - covered_expenses, 0.0)
+        _income_left          = max(_income_left - monthly_expenses, 0.0)
+        covered_repay         = min(_income_left, _plan_repay)
+        work_for_repay        = max(_plan_repay - covered_repay, 0.0)
+        _income_left          = max(_income_left - _plan_repay, 0.0)
+        work_for_investment   = max(monthly_invest_needed - _income_left, 0.0)
         hours_expenses        = work_for_expenses  / hourly_rate if hourly_rate > 0 else 0.0
+        hours_repay           = work_for_repay     / hourly_rate if hourly_rate > 0 else 0.0
         hours_investment      = work_for_investment / hourly_rate if hourly_rate > 0 else 0.0
 
         # ── Progress bar ──
@@ -2081,8 +2214,14 @@ with tab_planning:
                     unsafe_allow_html=True
                 )
 
-        h1, h2, h3 = st.columns(3)
-        # Expenses card: "Covered ✓" if income handles it, otherwise show hours needed
+        # Cards: show loan repayment card only if user has active loans
+        if _plan_repay > 0:
+            h1, h2, h3, h4 = st.columns(4)
+        else:
+            h1, h2, h3 = st.columns(3)
+            h4 = None
+
+        # Expenses card
         if work_for_expenses == 0 and monthly_expenses > 0:
             _hour_card(h1, "Monthly expenses", hours_expenses,
                        monthly_expenses, "#27ae7a",
@@ -2091,12 +2230,68 @@ with tab_planning:
             _hour_card(h1, "For expenses (from work)", hours_expenses,
                        work_for_expenses, "#c94c4c",
                        f"€{covered_expenses:,.0f} covered by income · €{work_for_expenses:,.0f} gap")
-        _hour_card(h2, "For investment (from work)", hours_investment,
-                   work_for_investment, "#27ae7a",
-                   f"€{monthly_invest_needed:,.0f} needed · {expected_return:.1f}% return assumed")
-        _hour_card(h3, "Total work hours needed", hours_total,
-                   work_income_needed, "#c9a84c",
-                   f"€{hourly_rate:.0f}/hr × {hours_total:.0f} hrs = €{work_income_needed:,.0f}")
+
+        # Loan repayment card (only if loans exist)
+        if h4 is not None:
+            if work_for_repay == 0:
+                _hour_card(h2, "Loan repayments", 0,
+                           _plan_repay, "#27ae7a",
+                           f"€{_plan_repay:,.0f}/mo covered by other income", covered=True)
+            else:
+                _hour_card(h2, "Loan repayments (from work)", hours_repay,
+                           work_for_repay, "#c94c4c",
+                           f"€{_plan_repay:,.0f}/mo across {len(st.session_state.loans)} loan(s)")
+            _hour_card(h3, "For investment (from work)", hours_investment,
+                       work_for_investment, "#27ae7a",
+                       f"€{monthly_invest_needed:,.0f} needed · {expected_return:.1f}% return assumed")
+            _hour_card(h4, "Total work hours needed", hours_total,
+                       work_income_needed, "#c9a84c",
+                       f"€{hourly_rate:.0f}/hr × {hours_total:.0f} hrs = €{work_income_needed:,.0f}")
+        else:
+            _hour_card(h2, "For investment (from work)", hours_investment,
+                       work_for_investment, "#27ae7a",
+                       f"€{monthly_invest_needed:,.0f} needed · {expected_return:.1f}% return assumed")
+            _hour_card(h3, "Total work hours needed", hours_total,
+                       work_income_needed, "#c9a84c",
+                       f"€{hourly_rate:.0f}/hr × {hours_total:.0f} hrs = €{work_income_needed:,.0f}")
+
+        # ── Active loans detail (if any) ──
+        if _plan_repay > 0 and not st.session_state.loans.empty:
+            st.markdown("<h3 style='margin-top:1.2rem;'>Active Loans</h3>", unsafe_allow_html=True)
+            loan_rows = []
+            for _, lr in st.session_state.loans.iterrows():
+                rem = calc_loan_balance(lr['Principal'], lr['Annual Rate'], lr['Monthly Payment'], lr['Start Date'])
+                _r  = lr['Annual Rate'] / 100 / 12
+                if _r > 0 and lr['Monthly Payment'] > 0:
+                    # Months remaining until payoff
+                    import math
+                    try:
+                        _mo_left = math.ceil(
+                            -math.log(1 - rem * _r / lr['Monthly Payment']) / math.log(1 + _r)
+                        ) if rem * _r / lr['Monthly Payment'] < 1 else 999
+                    except Exception:
+                        _mo_left = 0
+                else:
+                    _mo_left = int(rem / lr['Monthly Payment']) if lr['Monthly Payment'] > 0 else 0
+                total_interest = max(lr['Monthly Payment'] * _mo_left - rem, 0.0)
+                loan_rows.append({
+                    'Name': lr['Name'],
+                    'Remaining (€)': rem,
+                    'Monthly payment': lr['Monthly Payment'],
+                    'Rate': lr['Annual Rate'],
+                    'Months left': _mo_left,
+                    'Interest still owed (€)': total_interest,
+                })
+            _loan_df = pd.DataFrame(loan_rows)
+            st.dataframe(
+                _loan_df.style.format({
+                    'Remaining (€)': '€{:,.0f}',
+                    'Monthly payment': '€{:,.0f}',
+                    'Rate': '{:.2f}%',
+                    'Interest still owed (€)': '€{:,.0f}',
+                }),
+                use_container_width=True, hide_index=True
+            )
 
         # ── Monthly investment history ──
         st.markdown("---")
