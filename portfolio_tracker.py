@@ -17,17 +17,82 @@ _KNOWN_CRYPTO = {
     'BTC-EUR','BTC-USD','ETH-EUR','ETH-USD','SOL-EUR','SOL-USD',
     'TAO-EUR','TAO-USD','XMR-EUR','ADA-EUR','DOGE-EUR','BNB-EUR','XRP-EUR',
 }
-_ETF_SUFFIXES = ('.AS','.DE','.L','.PA','.MI','.MC','.SW','.BR','.CO','.HE','.OL','.ST')
+
+# Exchange suffixes → pricing currency (NOT asset type — .AS can be ETF or Stock)
+# GBP: London Stock Exchange (prices in pence → divide by 100 → convert to EUR)
+# CHF: Swiss Exchange
+# EUR: all Euronext / Xetra / Borsa Italiana exchanges
+_SUFFIX_CURRENCY = {
+    '.AS': 'EUR', '.DE': 'EUR', '.PA': 'EUR', '.MI': 'EUR', '.MC': 'EUR',
+    '.BR': 'EUR', '.CO': 'EUR', '.HE': 'EUR', '.OL': 'EUR', '.ST': 'EUR',
+    '.L':  'GBP',  # London (pence)
+    '.SW': 'CHF',
+}
+
+# Well-known ETF tickers (exchange suffix is NOT a reliable ETF signal)
+_KNOWN_ETFS = {
+    # iShares / BlackRock
+    'IWDA','IWDA.AS','CSPX','CSPX.AS','IEMG','IEMG.AS','AGGH','AGGH.AS',
+    'IUSQ','IUSQ.AS','ISAC','ISAC.AS','MEUD','MEUD.AS','IQQQ','IQQQ.DE',
+    # Vanguard
+    'VWRL','VWRL.AS','VUSA','VUSA.AS','VUAA','VUAA.AS','SWRD','SWRD.AS',
+    'VWCE','VWCE.DE','VGWL','VGWL.SW',
+    # Invesco / Xtrackers / Amundi / Lyxor
+    'EQQQ','EQQQ.AS','QDVE','QDVE.DE','SLMC','SLMC.DE','DAXEX','DAXEX.DE',
+    'PAEEM','PAEEM.AS','LCUW','LCUW.DE',
+    # US ETFs
+    'VOO','VTI','QQQ','SPY','IVV','VEA','VWO','GLD','TLT','SHY','AGG',
+    'ARKK','XLK','XLF','VNQ','SCHD',
+}
 
 def auto_detect_category(ticker: str) -> str:
+    """Crypto → known list. ETF → known ETF set. Everything else → Stock.
+    Exchange suffixes (.AS, .DE …) are NOT used to detect ETFs because those
+    suffixes only indicate which exchange a security trades on."""
     t = ticker.upper()
     base = t.split('-')[0]
     if t in _KNOWN_CRYPTO or base in _KNOWN_CRYPTO:
         return 'Crypto'
-    for s in _ETF_SUFFIXES:
-        if t.endswith(s):
-            return 'ETF'
+    if t in _KNOWN_ETFS:
+        return 'ETF'
     return 'Stock'
+
+@st.cache_data(ttl=3600)
+def _fx_to_eur(from_currency: str) -> float:
+    """Return 1 unit of `from_currency` in EUR. Falls back to 1.0 on error."""
+    if from_currency == 'EUR':
+        return 1.0
+    pair = f"{from_currency}EUR=X"
+    try:
+        data = yf.Ticker(pair).history(period='2d', interval='1d')['Close']
+        if not data.empty:
+            return float(data.iloc[-1])
+    except Exception:
+        pass
+    return 1.0
+
+def _ticker_currency(ticker: str) -> str:
+    """Infer the pricing currency from the ticker format."""
+    t = ticker.upper()
+    if t.endswith('-EUR') or t.endswith('EUR=X'):
+        return 'EUR'
+    if t.endswith('-USD') or t.endswith('USD=X'):
+        return 'USD'
+    for suffix, ccy in _SUFFIX_CURRENCY.items():
+        if t.endswith(suffix):
+            return ccy
+    # No recognised suffix → assume US stock → USD
+    return 'USD'
+
+def _price_to_eur(raw_price: float, ticker: str) -> float:
+    """Convert a raw yfinance price to EUR."""
+    ccy = _ticker_currency(ticker)
+    if ccy == 'EUR':
+        return raw_price
+    if ccy == 'GBP':
+        # London prices are in pence → divide by 100 first
+        return (raw_price / 100) * _fx_to_eur('GBP')
+    return raw_price * _fx_to_eur(ccy)
 
 # -------------------------
 # Styling
@@ -940,12 +1005,7 @@ def get_price(ticker):
         try:
             data = yf.Ticker(t).history(period='1d', interval='1d')['Close']
             if not data.empty:
-                price = data.iloc[-1]
-                if t.endswith('-USD') or t in ['VOO', 'TAO22974-USD', 'TAO-USD', 'TAO/USD']:
-                    eur_usd = yf.Ticker('EURUSD=X').history(period='1d', interval='1d')['Close']
-                    if not eur_usd.empty:
-                        return price / eur_usd.iloc[-1]
-                return price
+                return _price_to_eur(float(data.iloc[-1]), t)
         except Exception:
             continue
     return 0.0
@@ -959,31 +1019,36 @@ def get_historical_data(ticker, period='1y'):
             return df
 
     tickers_to_try = [ticker]
-    if ticker in ['VUSA', 'VUSA.AS']:
-        tickers_to_try.extend(['VUSA.AS', 'VOO'])
-    elif ticker in ['VWRL', 'VWRL.AS']:
-        tickers_to_try.extend(['VWRL.AS'])
-    elif ticker in ['QDVE', 'QDVE.DE']:
-        tickers_to_try.extend(['QDVE.DE'])
-    elif ticker == 'SLMC.DE':
-        tickers_to_try.extend(['SLMC.'])
-    elif ticker in ['BTC', 'ETH', 'SOL', 'TAO']:
+    if ticker in ['BTC', 'ETH', 'SOL', 'TAO']:
         tickers_to_try.extend([f"{ticker}-EUR", f"{ticker}-USD"])
     elif '-EUR' in ticker:
         tickers_to_try.append(ticker.replace('-EUR', '-USD'))
 
     for t in tickers_to_try:
         try:
-            data = yf.download(t, period=period)
-            if not data.empty:
-                data = data['Close'].reset_index()
-                data.columns = ['Date', 'Close']
-                if t.endswith('-USD') or t in ['VOO', 'TAO22974-USD', 'TAO-USD', 'TAO/USD']:
-                    eur_usd = yf.download('EURUSD=X', period=period)
-                    if not eur_usd.empty:
-                        eur_usd = eur_usd['Close'].reindex(data.index, method='ffill')
-                        data['Close'] = data['Close'] / eur_usd
-                return data
+            raw = yf.download(t, period=period, progress=False)
+            if raw.empty:
+                continue
+            data = raw['Close'].reset_index()
+            data.columns = ['Date', 'Close']
+            ccy = _ticker_currency(t)
+            if ccy == 'EUR':
+                pass  # already EUR
+            elif ccy == 'GBP':
+                # pence → GBP → EUR (use scalar rate, good enough for charts)
+                rate = _fx_to_eur('GBP')
+                data['Close'] = data['Close'] / 100 * rate
+            else:  # USD or CHF etc.
+                # Download the FX series for proper daily conversion
+                fx_pair = f"{ccy}EUR=X"
+                fx_raw = yf.download(fx_pair, period=period, progress=False)
+                if not fx_raw.empty:
+                    fx = fx_raw['Close'].reindex(raw.index, method='ffill')
+                    data['Close'] = data['Close'].values * fx.values
+                else:
+                    rate = _fx_to_eur(ccy)
+                    data['Close'] = data['Close'] * rate
+            return data
         except Exception:
             continue
 
