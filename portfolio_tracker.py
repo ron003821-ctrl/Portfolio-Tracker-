@@ -2195,9 +2195,10 @@ with tab_planning:
             net_after_income = other_monthly_income - monthly_expenses  # positive = surplus
             if other_monthly_income >= monthly_expenses:
                 _exp_tag  = f"<span style='color:#27ae7a;'>✓ €{monthly_expenses:,.0f} expenses fully covered</span>"
+                _surplus  = other_monthly_income - monthly_expenses
                 _inv_tag  = (
-                    f"<span style='color:#27ae7a;'>+ €{leftover_income:,.0f} toward investments</span>"
-                    if leftover_income > 0 else ""
+                    f"<span style='color:#27ae7a;'>+ €{_surplus:,.0f} toward investments</span>"
+                    if _surplus > 0 else ""
                 )
             else:
                 _exp_tag = (
