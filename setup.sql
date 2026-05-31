@@ -81,8 +81,18 @@ CREATE TABLE IF NOT EXISTS loans (
   annual_rate FLOAT DEFAULT 0,
   monthly_payment FLOAT DEFAULT 0,
   start_date DATE NOT NULL DEFAULT CURRENT_DATE,
-  notes TEXT DEFAULT ''
+  notes TEXT DEFAULT '',
+  loan_type TEXT DEFAULT 'standard',
+  monthly_borrow FLOAT DEFAULT 0,
+  study_end_date DATE,
+  repayment_years FLOAT DEFAULT 10
 );
+
+-- If loans table already exists, add the new columns:
+ALTER TABLE public.loans ADD COLUMN IF NOT EXISTS loan_type TEXT DEFAULT 'standard';
+ALTER TABLE public.loans ADD COLUMN IF NOT EXISTS monthly_borrow FLOAT DEFAULT 0;
+ALTER TABLE public.loans ADD COLUMN IF NOT EXISTS study_end_date DATE;
+ALTER TABLE public.loans ADD COLUMN IF NOT EXISTS repayment_years FLOAT DEFAULT 10;
 
 -- RLS
 ALTER TABLE public.allocation_targets ENABLE ROW LEVEL SECURITY;

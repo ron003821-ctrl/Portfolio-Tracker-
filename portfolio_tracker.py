@@ -671,24 +671,49 @@ def load_loans() -> pd.DataFrame:
                 'id': 'id', 'name': 'Name', 'principal': 'Principal',
                 'annual_rate': 'Annual Rate', 'monthly_payment': 'Monthly Payment',
                 'start_date': 'Start Date', 'notes': 'Notes',
+                'loan_type': 'Loan Type', 'monthly_borrow': 'Monthly Borrow',
+                'study_end_date': 'Study End Date', 'repayment_years': 'Repayment Years',
             })
-            for col in ['Principal', 'Annual Rate', 'Monthly Payment']:
-                df[col] = pd.to_numeric(df[col], errors='coerce').fillna(0.0)
+            for col in ['Principal', 'Annual Rate', 'Monthly Payment', 'Monthly Borrow', 'Repayment Years']:
+                if col in df.columns:
+                    df[col] = pd.to_numeric(df[col], errors='coerce').fillna(0.0)
+            if 'Loan Type' not in df.columns:
+                df['Loan Type'] = 'standard'
+            else:
+                df['Loan Type'] = df['Loan Type'].fillna('standard')
+            if 'Monthly Borrow' not in df.columns:
+                df['Monthly Borrow'] = 0.0
+            if 'Study End Date' not in df.columns:
+                df['Study End Date'] = None
+            if 'Repayment Years' not in df.columns:
+                df['Repayment Years'] = 10.0
             return df
     except Exception:
         pass
-    return pd.DataFrame(columns=['id', 'Name', 'Principal', 'Annual Rate', 'Monthly Payment', 'Start Date', 'Notes'])
+    return pd.DataFrame(columns=[
+        'id', 'Name', 'Principal', 'Annual Rate', 'Monthly Payment',
+        'Start Date', 'Notes', 'Loan Type', 'Monthly Borrow',
+        'Study End Date', 'Repayment Years',
+    ])
 
-def add_loan_db(name, principal, annual_rate, monthly_payment, start_date, notes='') -> bool:
+def add_loan_db(name, principal, annual_rate, monthly_payment, start_date, notes='',
+                loan_type='standard', monthly_borrow=0.0, study_end_date=None,
+                repayment_years=10.0) -> bool:
+    row = {
+        'name': str(name),
+        'principal': float(principal),
+        'annual_rate': float(annual_rate),
+        'monthly_payment': float(monthly_payment),
+        'start_date': str(start_date),
+        'notes': str(notes),
+        'loan_type': str(loan_type),
+        'monthly_borrow': float(monthly_borrow),
+        'repayment_years': float(repayment_years),
+    }
+    if study_end_date is not None:
+        row['study_end_date'] = str(study_end_date)
     try:
-        supabase.table('loans').insert({
-            'name': str(name),
-            'principal': float(principal),
-            'annual_rate': float(annual_rate),
-            'monthly_payment': float(monthly_payment),
-            'start_date': str(start_date),
-            'notes': str(notes),
-        }).execute()
+        supabase.table('loans').insert(row).execute()
         return True
     except Exception as e:
         st.error(f"Error adding loan: {e}")
@@ -702,29 +727,98 @@ def delete_loan_db(loan_id: int) -> bool:
         st.error(f"Error deleting loan: {e}")
         return False
 
-def calc_loan_balance(principal: float, annual_rate: float, monthly_payment: float, start_date) -> float:
-    """Remaining balance today using standard loan amortisation formula."""
+def _student_balance_at(monthly_borrow: float, r_monthly: float,
+                         start_date, cutoff_date) -> float:
+    """Accumulated student loan balance at cutoff_date (FV of annuity)."""
+    _start   = pd.to_datetime(str(start_date)).date()
+    _cutoff  = pd.to_datetime(str(cutoff_date)).date()
+    months   = max((_cutoff.year - _start.year) * 12 + (_cutoff.month - _start.month), 0)
+    if r_monthly == 0:
+        return float(monthly_borrow) * months
+    return float(monthly_borrow) * ((1 + r_monthly) ** months - 1) / r_monthly
+
+def calc_student_monthly_payment(monthly_borrow: float, annual_rate: float,
+                                  start_date, study_end_date, repayment_years: float) -> float:
+    """Monthly repayment after study based on balance accumulated at study end."""
+    r = annual_rate / 100 / 12
+    balance_at_end = _student_balance_at(monthly_borrow, r, start_date, study_end_date)
+    n = max(int(repayment_years * 12), 1)
+    if balance_at_end == 0:
+        return 0.0
+    if r == 0:
+        return balance_at_end / n
+    return balance_at_end * r * (1 + r) ** n / ((1 + r) ** n - 1)
+
+def calc_loan_balance(principal: float, annual_rate: float, monthly_payment: float,
+                      start_date, loan_type: str = 'standard',
+                      monthly_borrow: float = 0.0, study_end_date=None,
+                      repayment_years: float = 10.0) -> float:
+    """Remaining loan balance today — handles both standard and student loans."""
     _today = datetime.now(ZoneInfo("Europe/Amsterdam")).date()
-    _start = pd.to_datetime(str(start_date)).date()
-    months = max((_today.year - _start.year) * 12 + (_today.month - _start.month), 0)
-    r = annual_rate / 100 / 12  # monthly rate
+    r      = annual_rate / 100 / 12
+
+    if loan_type == 'student' and study_end_date is not None:
+        _study_end = pd.to_datetime(str(study_end_date)).date()
+
+        if _today <= _study_end:
+            # Still in study: balance = FV of monthly borrows so far
+            return _student_balance_at(monthly_borrow, r, start_date, _today)
+        else:
+            # Study done: amortise from balance-at-study-end
+            balance_at_end = _student_balance_at(monthly_borrow, r, start_date, _study_end)
+            n_repay = max(int(repayment_years * 12), 1)
+            pmt = (balance_at_end * r * (1 + r) ** n_repay / ((1 + r) ** n_repay - 1)
+                   if r > 0 else balance_at_end / n_repay)
+            n_paid = max((_today.year - _study_end.year) * 12
+                         + (_today.month - _study_end.month), 0)
+            if r == 0:
+                return max(balance_at_end - pmt * n_paid, 0.0)
+            factor = (1 + r) ** n_paid
+            return max(balance_at_end * factor - pmt * (factor - 1) / r, 0.0)
+
+    # Standard loan
+    _start  = pd.to_datetime(str(start_date)).date()
+    months  = max((_today.year - _start.year) * 12 + (_today.month - _start.month), 0)
     if r == 0:
         return max(float(principal) - float(monthly_payment) * months, 0.0)
-    factor = (1 + r) ** months
+    factor  = (1 + r) ** months
     balance = float(principal) * factor - float(monthly_payment) * (factor - 1) / r
     return max(balance, 0.0)
 
+def _loan_current_monthly_payment(row) -> float:
+    """The actual monthly cash outflow for this loan today."""
+    _today = datetime.now(ZoneInfo("Europe/Amsterdam")).date()
+    if row.get('Loan Type') == 'student':
+        _sed = row.get('Study End Date')
+        if _sed is None or _sed == 'None' or pd.isnull(_sed):
+            return 0.0   # still in study, no payments
+        _study_end = pd.to_datetime(str(_sed)).date()
+        if _today <= _study_end:
+            return 0.0   # still in study
+        # After study: computed payment
+        return calc_student_monthly_payment(
+            row.get('Monthly Borrow', 0.0), row.get('Annual Rate', 0.0),
+            row.get('Start Date'), _sed, row.get('Repayment Years', 10.0)
+        )
+    return float(row.get('Monthly Payment', 0.0))
+
 def get_loans_summary() -> dict:
-    """Total remaining debt and total monthly repayments across all loans."""
+    """Total remaining debt and current total monthly repayments."""
     loans = st.session_state.get('loans', pd.DataFrame())
     if loans.empty:
         return {'total_debt': 0.0, 'monthly_repayments': 0.0}
     total_debt = sum(
-        calc_loan_balance(row['Principal'], row['Annual Rate'],
-                          row['Monthly Payment'], row['Start Date'])
+        calc_loan_balance(
+            row.get('Principal', 0.0), row.get('Annual Rate', 0.0),
+            row.get('Monthly Payment', 0.0), row.get('Start Date'),
+            loan_type=str(row.get('Loan Type', 'standard')),
+            monthly_borrow=float(row.get('Monthly Borrow', 0.0)),
+            study_end_date=row.get('Study End Date'),
+            repayment_years=float(row.get('Repayment Years', 10.0)),
+        )
         for _, row in loans.iterrows()
     )
-    monthly = float(loans['Monthly Payment'].sum())
+    monthly = sum(_loan_current_monthly_payment(row) for _, row in loans.iterrows())
     return {'total_debt': total_debt, 'monthly_repayments': monthly}
 
 def calc_annualized_return(total_profit_pct: float, transactions_df: pd.DataFrame) -> float:
@@ -1032,37 +1126,82 @@ with st.sidebar.expander("Cashflow Tracker", expanded=False):
 # ─── Loans sidebar ───
 with st.sidebar.expander("Loans / Debt", expanded=False):
     st.subheader("Add a Loan")
-    loan_name      = st.text_input("Loan name", placeholder="Student Loan 2025", key="loan_name_in")
-    loan_principal = st.number_input("Total amount borrowed (€)", min_value=0.0, step=100.0, format="%.2f", key="loan_principal_in")
-    loan_rate      = st.number_input("Annual interest rate (%)", min_value=0.0, max_value=30.0, step=0.1, format="%.2f", key="loan_rate_in")
-    loan_payment   = st.number_input("Monthly repayment (€)", min_value=0.0, step=10.0, format="%.2f", key="loan_payment_in")
-    loan_start     = st.date_input("Start date", value=datetime.now(ZoneInfo("Europe/Amsterdam")).date(), key="loan_start_in")
-    loan_notes     = st.text_input("Notes (optional)", key="loan_notes_in")
+    loan_type_sel = st.selectbox(
+        "Type lening", ["Studentenlening (maandelijks)", "Standaard lening"],
+        key="loan_type_sel"
+    )
+    _is_student = loan_type_sel.startswith("Student")
 
-    if st.button("Add Loan", key="loan_add_btn"):
-        if loan_name and loan_principal > 0 and loan_payment > 0:
-            if add_loan_db(loan_name, loan_principal, loan_rate, loan_payment, loan_start, loan_notes):
+    loan_name  = st.text_input("Naam", placeholder="DUO Lening 2025", key="loan_name_in")
+    loan_rate  = st.number_input("Jaarlijkse rente (%)", min_value=0.0, max_value=30.0,
+                                  step=0.01, format="%.2f", key="loan_rate_in")
+    loan_start = st.date_input("Startdatum", value=datetime.now(ZoneInfo("Europe/Amsterdam")).date(),
+                                key="loan_start_in")
+
+    if _is_student:
+        loan_monthly_borrow  = st.number_input("Maandelijks leenbedrag (€)", min_value=0.0,
+                                                step=50.0, format="%.2f", key="loan_mb_in")
+        loan_study_end       = st.date_input("Einde studie (start terugbetaling)",
+                                              value=date(2028, 7, 1), key="loan_send_in")
+        loan_repay_years     = st.number_input("Terugbetalingsperiode (jaren)", min_value=1.0,
+                                                max_value=40.0, value=15.0, step=1.0,
+                                                format="%.0f", key="loan_ry_in")
+        loan_principal = 0.0
+        loan_payment   = 0.0
+    else:
+        loan_principal = st.number_input("Totaal geleend bedrag (€)", min_value=0.0,
+                                          step=100.0, format="%.2f", key="loan_principal_in")
+        loan_payment   = st.number_input("Maandelijkse aflossing (€)", min_value=0.0,
+                                          step=10.0, format="%.2f", key="loan_payment_in")
+        loan_monthly_borrow = 0.0
+        loan_study_end      = None
+        loan_repay_years    = 10.0
+
+    loan_notes = st.text_input("Notities (optioneel)", key="loan_notes_in")
+
+    if st.button("Lening toevoegen", key="loan_add_btn"):
+        _ok = False
+        if _is_student:
+            _ok = bool(loan_name and loan_monthly_borrow > 0)
+        else:
+            _ok = bool(loan_name and loan_principal > 0 and loan_payment > 0)
+
+        if _ok:
+            _ltype = 'student' if _is_student else 'standard'
+            if add_loan_db(loan_name, loan_principal, loan_rate, loan_payment, loan_start,
+                           loan_notes, loan_type=_ltype,
+                           monthly_borrow=loan_monthly_borrow,
+                           study_end_date=loan_study_end,
+                           repayment_years=loan_repay_years):
                 st.session_state.loans = load_loans()
-                st.success(f"Loan '{loan_name}' added.")
+                st.success(f"Lening '{loan_name}' toegevoegd.")
                 st.rerun()
         else:
-            st.warning("Please fill in name, amount, and monthly repayment.")
+            st.warning("Vul naam en bedrag(en) in.")
 
     if not st.session_state.loans.empty:
         st.markdown("---")
-        st.subheader("Active Loans")
+        st.subheader("Actieve leningen")
         for _, loan_row in st.session_state.loans.iterrows():
             remaining = calc_loan_balance(
-                loan_row['Principal'], loan_row['Annual Rate'],
-                loan_row['Monthly Payment'], loan_row['Start Date']
+                loan_row.get('Principal', 0.0), loan_row.get('Annual Rate', 0.0),
+                loan_row.get('Monthly Payment', 0.0), loan_row.get('Start Date'),
+                loan_type=str(loan_row.get('Loan Type', 'standard')),
+                monthly_borrow=float(loan_row.get('Monthly Borrow', 0.0)),
+                study_end_date=loan_row.get('Study End Date'),
+                repayment_years=float(loan_row.get('Repayment Years', 10.0)),
             )
+            _pmt = _loan_current_monthly_payment(loan_row)
+            _lbl = "opgebouwd" if str(loan_row.get('Loan Type')) == 'student' else "resterend"
             st.markdown(
-                f"**{loan_row['Name']}** — €{remaining:,.0f} remaining  \n"
+                f"**{loan_row['Name']}** — €{remaining:,.0f} {_lbl}  \n"
                 f"<span style='font-size:0.78rem; color:#5c5a54;'>"
-                f"€{loan_row['Monthly Payment']:,.0f}/mo · {loan_row['Annual Rate']:.2f}% interest</span>",
+                f"{'€' + f\"{float(loan_row.get('Monthly Borrow',0)):,.0f}\" + '/mo lening' if str(loan_row.get('Loan Type'))=='student' else ''}"
+                f"{' · €' + f'{_pmt:,.0f}' + '/mo aflossing' if _pmt > 0 else ' · geen aflossing nu'}"
+                f" · {loan_row['Annual Rate']:.2f}% rente</span>",
                 unsafe_allow_html=True
             )
-            if st.button("Delete", key=f"loan_del_{loan_row['id']}"):
+            if st.button("Verwijderen", key=f"loan_del_{loan_row['id']}"):
                 if delete_loan_db(int(loan_row['id'])):
                     st.session_state.loans = load_loans()
                     st.rerun()
@@ -2299,39 +2438,76 @@ with tab_planning:
                        f"€{hourly_rate:.0f}/hr × {hours_total:.0f} hrs = €{work_income_needed:,.0f}")
 
         # ── Active loans detail (if any) ──
-        if _plan_repay > 0 and not st.session_state.loans.empty:
-            st.markdown("<h3 style='margin-top:1.2rem;'>Active Loans</h3>", unsafe_allow_html=True)
+        import math as _math
+        if not st.session_state.loans.empty:
+            st.markdown("<h3 style='margin-top:1.2rem;'>Leningen</h3>", unsafe_allow_html=True)
+            _today_l = datetime.now(ZoneInfo("Europe/Amsterdam")).date()
             loan_rows = []
             for _, lr in st.session_state.loans.iterrows():
-                rem = calc_loan_balance(lr['Principal'], lr['Annual Rate'], lr['Monthly Payment'], lr['Start Date'])
-                _r  = lr['Annual Rate'] / 100 / 12
-                if _r > 0 and lr['Monthly Payment'] > 0:
-                    # Months remaining until payoff
-                    import math
-                    try:
-                        _mo_left = math.ceil(
-                            -math.log(1 - rem * _r / lr['Monthly Payment']) / math.log(1 + _r)
-                        ) if rem * _r / lr['Monthly Payment'] < 1 else 999
-                    except Exception:
-                        _mo_left = 0
+                _ltype = str(lr.get('Loan Type', 'standard'))
+                _r     = float(lr.get('Annual Rate', 0.0)) / 100 / 12
+                rem    = calc_loan_balance(
+                    lr.get('Principal', 0.0), lr.get('Annual Rate', 0.0),
+                    lr.get('Monthly Payment', 0.0), lr.get('Start Date'),
+                    loan_type=_ltype,
+                    monthly_borrow=float(lr.get('Monthly Borrow', 0.0)),
+                    study_end_date=lr.get('Study End Date'),
+                    repayment_years=float(lr.get('Repayment Years', 10.0)),
+                )
+
+                if _ltype == 'student':
+                    _sed = lr.get('Study End Date')
+                    _mb  = float(lr.get('Monthly Borrow', 0.0))
+                    _ry  = float(lr.get('Repayment Years', 10.0))
+                    _studying = (_sed is None or _sed == 'None'
+                                 or _today_l <= pd.to_datetime(str(_sed)).date())
+                    _bal_end  = (_student_balance_at(_mb, _r, lr.get('Start Date'), _sed)
+                                 if _sed and _sed != 'None' else rem)
+                    _pmt_after = (calc_student_monthly_payment(
+                        _mb, float(lr.get('Annual Rate', 0.0)),
+                        lr.get('Start Date'), _sed, _ry) if _sed and _sed != 'None' else 0.0)
+                    _total_repay = _pmt_after * _ry * 12 if _pmt_after > 0 else 0.0
+                    _total_interest = max(_total_repay - _bal_end, 0.0)
+                    loan_rows.append({
+                        'Naam': lr['Name'],
+                        'Type': 'Studentenlening',
+                        'Huidig saldo (€)': rem,
+                        'Saldo bij afstuderen (€)': _bal_end,
+                        'Aflossing na studie': f"€{_pmt_after:,.0f}/mo" if _pmt_after > 0 else "–",
+                        'Status': "📚 Studie loopt" if _studying else "💼 Terugbetaling",
+                        'Rente': f"{lr.get('Annual Rate', 0.0):.2f}%",
+                        'Totale rente (€)': _total_interest,
+                    })
                 else:
-                    _mo_left = int(rem / lr['Monthly Payment']) if lr['Monthly Payment'] > 0 else 0
-                total_interest = max(lr['Monthly Payment'] * _mo_left - rem, 0.0)
-                loan_rows.append({
-                    'Name': lr['Name'],
-                    'Remaining (€)': rem,
-                    'Monthly payment': lr['Monthly Payment'],
-                    'Rate': lr['Annual Rate'],
-                    'Months left': _mo_left,
-                    'Interest still owed (€)': total_interest,
-                })
+                    _pmt = float(lr.get('Monthly Payment', 0.0))
+                    if _r > 0 and _pmt > 0 and rem * _r / _pmt < 1:
+                        try:
+                            _mo_left = _math.ceil(
+                                -_math.log(1 - rem * _r / _pmt) / _math.log(1 + _r))
+                        except Exception:
+                            _mo_left = 0
+                    else:
+                        _mo_left = int(rem / _pmt) if _pmt > 0 else 0
+                    loan_rows.append({
+                        'Naam': lr['Name'],
+                        'Type': 'Standaard',
+                        'Huidig saldo (€)': rem,
+                        'Saldo bij afstuderen (€)': 0.0,
+                        'Aflossing na studie': f"€{_pmt:,.0f}/mo",
+                        'Status': f"{_mo_left} maanden",
+                        'Rente': f"{lr.get('Annual Rate', 0.0):.2f}%",
+                        'Totale rente (€)': max(_pmt * _mo_left - rem, 0.0),
+                    })
             _loan_df = pd.DataFrame(loan_rows)
+            _show_cols = ['Naam', 'Type', 'Status', 'Huidig saldo (€)',
+                          'Saldo bij afstuderen (€)', 'Aflossing na studie',
+                          'Rente', 'Totale rente (€)']
+            _show_cols = [c for c in _show_cols if c in _loan_df.columns]
             st.dataframe(
-                _loan_df.style.format({
-                    'Remaining (€)': '€{:,.0f}',
-                    'Monthly payment': '€{:,.0f}',
-                    'Rate': '{:.2f}%',
-                    'Interest still owed (€)': '€{:,.0f}',
+                _loan_df[_show_cols].style.format({
+                    'Huidig saldo (€)': '€{:,.0f}',
+                    'Saldo bij afstuderen (€)': '€{:,.0f}',
+                    'Totale rente (€)': '€{:,.0f}',
                 }),
                 use_container_width=True, hide_index=True
             )
