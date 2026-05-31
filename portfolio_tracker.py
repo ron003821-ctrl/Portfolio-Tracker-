@@ -727,6 +727,20 @@ def get_loans_summary() -> dict:
     monthly = float(loans['Monthly Payment'].sum())
     return {'total_debt': total_debt, 'monthly_repayments': monthly}
 
+def calc_annualized_return(total_profit_pct: float, transactions_df: pd.DataFrame) -> float:
+    """Convert total P&L % to an annualised % based on the age of the portfolio."""
+    if transactions_df.empty or total_profit_pct == 0:
+        return 0.0
+    try:
+        _today = datetime.now(ZoneInfo("Europe/Amsterdam")).date()
+        _first = pd.to_datetime(transactions_df['Date'], errors='coerce').min().date()
+        years  = max((_today - _first).days / 365.25, 1 / 12)  # minimum 1 month
+        r_total  = total_profit_pct / 100
+        r_annual = (1 + r_total) ** (1 / years) - 1
+        return r_annual * 100
+    except Exception:
+        return total_profit_pct  # fallback: use as-is
+
 # -------------------------
 # Login
 # -------------------------
@@ -2321,6 +2335,124 @@ with tab_planning:
                 }),
                 use_container_width=True, hide_index=True
             )
+
+        # ── Leverage Analysis ──
+        if not st.session_state.loans.empty:
+            st.markdown("---")
+            st.markdown("<h3>Leverage Analysis</h3>", unsafe_allow_html=True)
+            st.markdown(
+                "<p style='font-family:Inter; font-size:0.8rem; color:#a8a49a; margin-bottom:1rem;'>"
+                "Is het rendabel om geleend geld te beleggen? "
+                "Je portfolio moet meer opleveren dan de rente die je betaalt.</p>",
+                unsafe_allow_html=True
+            )
+
+            # Annualised portfolio return
+            _ann_pct = calc_annualized_return(profit_percentage, st.session_state.transactions)
+
+            for _, _lr in st.session_state.loans.iterrows():
+                _principal  = float(_lr['Principal'])
+                _rate       = float(_lr['Annual Rate'])
+                _rem        = calc_loan_balance(_principal, _rate,
+                                                float(_lr['Monthly Payment']), _lr['Start Date'])
+
+                # Interest cost on remaining balance
+                _annual_interest   = _rem * _rate / 100
+                _monthly_interest  = _annual_interest / 12
+
+                # Investment return on the original principal
+                _annual_gain   = _principal * _ann_pct / 100
+                _monthly_gain  = _annual_gain / 12
+
+                # Net and spread
+                _net_annual = _annual_gain - _annual_interest
+                _spread     = _ann_pct - _rate
+                _profitable = _spread > 0
+                _status_col = "#27ae7a" if _profitable else "#c94c4c"
+                _status_ico = "✓" if _profitable else "✗"
+                _spread_sign = "+" if _spread >= 0 else ""
+
+                # Card header
+                st.markdown(
+                    f"<div style='font-family:Inter; font-size:0.65rem; text-transform:uppercase; "
+                    f"letter-spacing:0.1em; color:#5c5a54; margin-bottom:0.5rem;'>"
+                    f"{_lr['Name']} &nbsp;·&nbsp; €{_principal:,.0f} geleend @ {_rate:.2f}%</div>",
+                    unsafe_allow_html=True
+                )
+
+                la1, la2, la3, la4 = st.columns(4)
+
+                la1.metric(
+                    "Jaarlijkse rentekost",
+                    f"€{_annual_interest:,.0f}",
+                    help=f"{_rate:.2f}% × €{_rem:,.0f} resterend saldo · €{_monthly_interest:,.0f}/maand"
+                )
+                la2.metric(
+                    f"Rendement op €{_principal:,.0f}",
+                    f"€{_annual_gain:,.0f}",
+                    delta=f"{_ann_pct:+.1f}% per jaar (huidig portfolio)",
+                    help=f"Jouw portfolio rendement geannualiseerd · €{_monthly_gain:,.0f}/maand"
+                )
+                la3.metric(
+                    "Netto winst/verlies",
+                    f"€{_net_annual:,.0f}",
+                    delta=f"{_spread_sign}{_spread:.1f}% spread",
+                    delta_color="normal" if _profitable else "inverse"
+                )
+                la4.metric(
+                    "Break-even rendement",
+                    f"{_rate:.2f}%",
+                    help="Minimum jaarrendement om de rente te dekken"
+                )
+
+                # Verdict bar
+                if _ann_pct == 0:
+                    _verdict = "Nog geen portfolio data beschikbaar voor berekening."
+                    _verdict_col = "#5c5a54"
+                elif _profitable:
+                    _verdict = (
+                        f"{_status_ico} Winstgevend — je portfolio ({_ann_pct:.1f}%) "
+                        f"rendert {_spread:.1f}% meer dan de rente ({_rate:.2f}%). "
+                        f"Netto winst: €{_net_annual:,.0f}/jaar."
+                    )
+                    _verdict_col = "#27ae7a"
+                else:
+                    _verdict = (
+                        f"{_status_ico} Niet winstgevend — je portfolio ({_ann_pct:.1f}%) "
+                        f"rendert {abs(_spread):.1f}% minder dan de rente ({_rate:.2f}%). "
+                        f"Je verliest €{abs(_net_annual):,.0f}/jaar door deze lening."
+                    )
+                    _verdict_col = "#c94c4c"
+
+                st.markdown(
+                    f"<div style='background:#0c1120; border:1px solid #192138; "
+                    f"border-left:3px solid {_verdict_col}; border-radius:6px; "
+                    f"padding:0.7rem 1rem; margin:0.4rem 0 1.2rem; "
+                    f"font-family:Inter; font-size:0.78rem; color:{_verdict_col};'>"
+                    f"{_verdict}</div>",
+                    unsafe_allow_html=True
+                )
+
+            # Overall summary if multiple loans
+            if len(st.session_state.loans) > 1:
+                _total_principal  = float(st.session_state.loans['Principal'].sum())
+                _total_interest_y = sum(
+                    calc_loan_balance(r['Principal'], r['Annual Rate'],
+                                      r['Monthly Payment'], r['Start Date']) * r['Annual Rate'] / 100
+                    for _, r in st.session_state.loans.iterrows()
+                )
+                _total_gain_y  = _total_principal * _ann_pct / 100
+                _total_net_y   = _total_gain_y - _total_interest_y
+                _tc = "#27ae7a" if _total_net_y >= 0 else "#c94c4c"
+                st.markdown(
+                    f"<div style='background:#0c1120; border:1px solid #192138; border-radius:6px; "
+                    f"padding:0.8rem 1.1rem; font-family:Inter; font-size:0.78rem;'>"
+                    f"<span style='color:#5c5a54; font-size:0.62rem; text-transform:uppercase; letter-spacing:0.1em;'>Totaal alle leningen</span><br>"
+                    f"<span style='color:{_tc}; font-size:1rem;'>Netto {'+' if _total_net_y >= 0 else ''}€{_total_net_y:,.0f}/jaar</span>"
+                    f"<span style='color:#5c5a54; font-size:0.75rem;'> &nbsp;(rendement €{_total_gain_y:,.0f} − rente €{_total_interest_y:,.0f})</span>"
+                    f"</div>",
+                    unsafe_allow_html=True
+                )
 
         # ── Monthly investment history ──
         st.markdown("---")
