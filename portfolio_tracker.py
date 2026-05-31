@@ -1191,14 +1191,16 @@ with st.sidebar.expander("Loans / Debt", expanded=False):
                 study_end_date=loan_row.get('Study End Date'),
                 repayment_years=float(loan_row.get('Repayment Years', 10.0)),
             )
-            _pmt = _loan_current_monthly_payment(loan_row)
-            _lbl = "opgebouwd" if str(loan_row.get('Loan Type')) == 'student' else "resterend"
+            _pmt  = _loan_current_monthly_payment(loan_row)
+            _lbl  = "opgebouwd" if str(loan_row.get('Loan Type')) == 'student' else "resterend"
+            _mb   = float(loan_row.get('Monthly Borrow', 0.0))
+            _borrow_tag = f"€{_mb:,.0f}/mo lening" if str(loan_row.get('Loan Type')) == 'student' else ""
+            _repay_tag  = f"€{_pmt:,.0f}/mo aflossing" if _pmt > 0 else "geen aflossing nu"
+            _detail = " · ".join(x for x in [_borrow_tag, _repay_tag] if x)
             st.markdown(
                 f"**{loan_row['Name']}** — €{remaining:,.0f} {_lbl}  \n"
                 f"<span style='font-size:0.78rem; color:#5c5a54;'>"
-                f"{'€' + f\"{float(loan_row.get('Monthly Borrow',0)):,.0f}\" + '/mo lening' if str(loan_row.get('Loan Type'))=='student' else ''}"
-                f"{' · €' + f'{_pmt:,.0f}' + '/mo aflossing' if _pmt > 0 else ' · geen aflossing nu'}"
-                f" · {loan_row['Annual Rate']:.2f}% rente</span>",
+                f"{_detail} · {loan_row['Annual Rate']:.2f}% rente</span>",
                 unsafe_allow_html=True
             )
             if st.button("Verwijderen", key=f"loan_del_{loan_row['id']}"):
