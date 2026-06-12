@@ -1218,12 +1218,69 @@ with st.sidebar.expander("Loans / Debt", expanded=False):
                     st.rerun()
 
 # -------------------------
-# CoinGecko helpers (for tokens not on Yahoo Finance)
+# Crypto price sources
+# CoinGecko (may need key) → Kraken (free, no key) → Yahoo Finance
 # -------------------------
 COINGECKO_IDS = {
     'TAO-EUR': 'bittensor',
     'TAO':     'bittensor',
 }
+
+# Kraken public API pairs (free, no API key needed)
+KRAKEN_PAIRS = {
+    'TAO-EUR': 'TAOEUR',
+    'TAO':     'TAOEUR',
+    'BTC-EUR': 'XBTEUR',
+    'ETH-EUR': 'ETHEUR',
+    'SOL-EUR': 'SOLEUR',
+    'BTC':     'XBTEUR',
+    'ETH':     'ETHEUR',
+    'SOL':     'SOLEUR',
+}
+
+@st.cache_data(ttl=300)
+def _kraken_price(pair: str) -> float:
+    """Fetch last trade price from Kraken public API (no key needed)."""
+    try:
+        import requests
+        r = requests.get(
+            f"https://api.kraken.com/0/public/Ticker?pair={pair}",
+            timeout=10
+        )
+        if r.status_code == 200:
+            result = r.json().get('result', {})
+            if result and not r.json().get('error'):
+                data = next(iter(result.values()))
+                return float(data['c'][0])  # last trade closed price
+    except Exception:
+        pass
+    return 0.0
+
+@st.cache_data(ttl=3600)
+def _kraken_history(pair: str, period: str = '1y') -> pd.DataFrame:
+    """Fetch OHLC history from Kraken public API."""
+    _days = {'6mo': 180, '1y': 365, '2y': 730, '5y': 1825, 'max': 1825}
+    days = _days.get(period, 365)
+    try:
+        import requests, time as _time
+        since = int(_time.time()) - days * 86400
+        r = requests.get(
+            f"https://api.kraken.com/0/public/OHLC?pair={pair}&interval=1440&since={since}",
+            timeout=15
+        )
+        if r.status_code == 200 and not r.json().get('error'):
+            result = r.json().get('result', {})
+            ohlc = result.get(pair, result.get(next(
+                (k for k in result if k != 'last'), None), []))
+            if ohlc:
+                df = pd.DataFrame(ohlc, columns=[
+                    'time', 'open', 'high', 'low', 'close', 'vwap', 'volume', 'count'])
+                df['Date'] = pd.to_datetime(df['time'], unit='s').dt.date
+                df['Close'] = df['close'].astype(float)
+                return df[['Date', 'Close']]
+    except Exception:
+        pass
+    return pd.DataFrame()
 
 @st.cache_data(ttl=300)
 def _coingecko_price(coin_id: str, vs_currency: str = 'eur') -> float:
@@ -1263,12 +1320,19 @@ def _coingecko_history(coin_id: str, vs_currency: str = 'eur', period: str = '1y
 # -------------------------
 @st.cache_data(ttl=300)
 def get_price(ticker):
-    # Use CoinGecko for known tokens not reliably on Yahoo Finance
+    # 1. CoinGecko (may be rate-limited without API key)
     if ticker in COINGECKO_IDS:
         price = _coingecko_price(COINGECKO_IDS[ticker])
         if price > 0:
             return price
 
+    # 2. Kraken public API (reliable, no key needed)
+    if ticker in KRAKEN_PAIRS:
+        price = _kraken_price(KRAKEN_PAIRS[ticker])
+        if price > 0:
+            return price
+
+    # 3. Yahoo Finance fallback
     tickers_to_try = [ticker]
     if ticker in ['VUSA', 'VUSA.AS']:
         tickers_to_try.extend(['VUSA.AS', 'VOO'])
@@ -1294,9 +1358,15 @@ def get_price(ticker):
 
 @st.cache_data(ttl=3600)
 def get_historical_data(ticker, period='1y'):
-    # Use CoinGecko for known tokens not reliably on Yahoo Finance
+    # 1. CoinGecko (may be rate-limited without API key)
     if ticker in COINGECKO_IDS:
         df = _coingecko_history(COINGECKO_IDS[ticker], period=period)
+        if not df.empty:
+            return df
+
+    # 2. Kraken (reliable free history source)
+    if ticker in KRAKEN_PAIRS:
+        df = _kraken_history(KRAKEN_PAIRS[ticker], period=period)
         if not df.empty:
             return df
 
