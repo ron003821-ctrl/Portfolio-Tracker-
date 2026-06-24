@@ -962,12 +962,26 @@ with st.sidebar.expander("Add Transaction", expanded=False):
     else:
         transaction_time = time(12, 0)
 
-    ticker = st.text_input("Ticker Symbol (e.g., VWRL.AS, BTC-EUR)", key="add_ticker_input") if trans_type != '' else ''
+    ticker = st.text_input(
+        "Ticker Symbol (e.g., VWRL.AS, META, MSFT, BTC-EUR, TAO-EUR)",
+        key="add_ticker_input"
+    ) if trans_type != '' else ''
 
     if trans_type in ['Buy', 'Sell', 'Staking']:
         _price_label = "Sell Price per Unit (EUR)" if trans_type == 'Sell' else "Price per Unit (EUR)"
         quantity = st.number_input("Quantity", min_value=0.0, value=0.0, step=1e-12, format="%.12f", key="add_quantity_input")
         purchase_price = st.number_input(_price_label, min_value=0.0, value=0.0, step=0.01, format="%.2f", key="add_price_input")
+        # Show currency hint when ticker is a USD stock
+        if ticker:
+            _t_ccy = _ticker_currency(ticker.upper())
+            if _t_ccy == 'USD':
+                st.caption(
+                    "💡 US aandeel — vul de prijs in **EUR** in (niet USD). "
+                    "Kijk op je broker-bevestiging voor de EUR aankoopprijs, "
+                    "of deel de USD-prijs door de wisselkoers op de aankoopdatum."
+                )
+            elif _t_ccy == 'GBP':
+                st.caption("💡 Brits aandeel — vul de prijs in EUR in (omrekenen van GBP/pence).")
         if trans_type in ['Buy', 'Sell']:
             fee_unit = st.selectbox("Fee Unit", options=['None', 'EUR'], key="add_fee_unit_select")
             fee_amount = st.number_input("Transaction Fee (EUR)", min_value=0.0, value=0.0, step=1e-12, format="%.12f", key="add_fee_amount_input") if fee_unit != 'None' else 0.0
