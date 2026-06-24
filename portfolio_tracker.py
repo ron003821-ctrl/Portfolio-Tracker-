@@ -1329,6 +1329,27 @@ def _coingecko_history(coin_id: str, vs_currency: str = 'eur', period: str = '1y
         pass
     return pd.DataFrame()
 
+# European cross-listings → US ticker fallback
+# When the EU-listed ticker returns no data, fall back to US ticker + USD→EUR conversion.
+_EU_FALLBACK = {
+    # Meta
+    'FB2A': 'META', 'FB2A.DE': 'META', 'FB2A.AS': 'META', 'FB2A.F': 'META',
+    # Microsoft
+    'MSF.DE': 'MSFT', 'MSF.AS': 'MSFT', 'MSFT.DE': 'MSFT', 'MSFT.AS': 'MSFT',
+    # Apple
+    'APC.DE': 'AAPL', 'APC.AS': 'AAPL', 'AAPL.DE': 'AAPL', 'AAPL.AS': 'AAPL',
+    # Amazon
+    'AMZ.DE': 'AMZN', 'AMZ.AS': 'AMZN', 'AMZN.DE': 'AMZN', 'AMZN.AS': 'AMZN',
+    # Alphabet
+    'ABEC.DE': 'GOOGL', 'ABEC.AS': 'GOOGL', 'GOOGL.DE': 'GOOGL', 'GOOG.DE': 'GOOGL',
+    # NVIDIA
+    'NVDA.DE': 'NVDA', 'NVDA.AS': 'NVDA', 'NVD.DE': 'NVDA',
+    # Tesla
+    'TL0.DE': 'TSLA', 'TL0.AS': 'TSLA', 'TSLA.DE': 'TSLA', 'TSLA.AS': 'TSLA',
+    # Netflix
+    'NFC.DE': 'NFLX', 'NFLX.DE': 'NFLX',
+}
+
 # -------------------------
 # Price fetching functions
 # -------------------------
@@ -1346,7 +1367,7 @@ def get_price(ticker):
         if price > 0:
             return price
 
-    # 3. Yahoo Finance fallback
+    # 3. Yahoo Finance — try EU ticker + common variants
     tickers_to_try = [ticker]
     if ticker in ['VUSA', 'VUSA.AS']:
         tickers_to_try.extend(['VUSA.AS', 'VOO'])
@@ -1360,6 +1381,11 @@ def get_price(ticker):
         tickers_to_try.extend([f"{ticker}-EUR", f"{ticker}-USD"])
     elif '-EUR' in ticker:
         tickers_to_try.append(ticker.replace('-EUR', '-USD'))
+    # For EU cross-listings: also try .F (Frankfurt) and .DE (XETRA) variants
+    if ticker.endswith('.DE'):
+        tickers_to_try.append(ticker[:-3] + '.F')
+    elif ticker.endswith('.F'):
+        tickers_to_try.append(ticker[:-2] + '.DE')
 
     for t in tickers_to_try:
         try:
@@ -1368,6 +1394,17 @@ def get_price(ticker):
                 return _price_to_eur(float(data.iloc[-1]), t)
         except Exception:
             continue
+
+    # 4. EU cross-listing fallback → US ticker with USD→EUR conversion
+    if ticker in _EU_FALLBACK:
+        us = _EU_FALLBACK[ticker]
+        try:
+            data = yf.Ticker(us).history(period='1d', interval='1d')['Close']
+            if not data.empty:
+                return _price_to_eur(float(data.iloc[-1]), us)
+        except Exception:
+            pass
+
     return 0.0
 
 @st.cache_data(ttl=3600)
@@ -1389,6 +1426,13 @@ def get_historical_data(ticker, period='1y'):
         tickers_to_try.extend([f"{ticker}-EUR", f"{ticker}-USD"])
     elif '-EUR' in ticker:
         tickers_to_try.append(ticker.replace('-EUR', '-USD'))
+    if ticker.endswith('.DE'):
+        tickers_to_try.append(ticker[:-3] + '.F')
+    elif ticker.endswith('.F'):
+        tickers_to_try.append(ticker[:-2] + '.DE')
+    # EU fallback: also try the US ticker
+    if ticker in _EU_FALLBACK:
+        tickers_to_try.append(_EU_FALLBACK[ticker])
 
     for t in tickers_to_try:
         try:
@@ -1401,11 +1445,9 @@ def get_historical_data(ticker, period='1y'):
             if ccy == 'EUR':
                 pass  # already EUR
             elif ccy == 'GBP':
-                # pence → GBP → EUR (use scalar rate, good enough for charts)
                 rate = _fx_to_eur('GBP')
                 data['Close'] = data['Close'] / 100 * rate
             else:  # USD or CHF etc.
-                # Download the FX series for proper daily conversion
                 fx_pair = f"{ccy}EUR=X"
                 fx_raw = yf.download(fx_pair, period=period, progress=False)
                 if not fx_raw.empty:
