@@ -319,23 +319,60 @@ st.markdown("""
         font-weight: 500 !important;
     }
 
-    /* ── Inputs — 6px radius ── */
-    .stTextInput > div > div > input,
-    .stNumberInput > div > div > input,
-    .stDateInput > div > div > input {
+    /* ── Inputs ──
+       Border lives on the baseweb CONTAINER (which also holds the eye /
+       step buttons), never on the inner input — otherwise you get a
+       double border on focus. */
+    [data-baseweb="input"],
+    [data-baseweb="base-input"] {
         background-color: #0e0f14 !important;
         border: 1px solid #262833 !important;
         border-radius: 8px !important;
+    }
+
+    [data-baseweb="input"]:focus-within,
+    [data-baseweb="base-input"]:focus-within {
+        border-color: #818cf8 !important;
+        box-shadow: 0 0 0 2px rgba(129,140,248,0.15) !important;
+    }
+
+    /* Nested base-input inside input container: no second border */
+    [data-baseweb="input"] [data-baseweb="base-input"] {
+        border: none !important;
+        box-shadow: none !important;
+        background-color: transparent !important;
+    }
+
+    .stTextInput input,
+    .stNumberInput input,
+    .stDateInput input {
+        background-color: transparent !important;
+        border: none !important;
+        outline: none !important;
+        box-shadow: none !important;
         color: #eef0f4 !important;
         font-family: 'Inter', sans-serif !important;
         font-size: 0.85rem !important;
     }
 
-    .stTextInput > div > div > input:focus,
-    .stNumberInput > div > div > input:focus {
-        border-color: #818cf8 !important;
-        box-shadow: 0 0 0 2px rgba(129,140,248,0.15) !important;
-        transform: none !important;
+    /* Eye icon (password) and +/- steppers: flat, no own border */
+    .stTextInput [data-baseweb="input"] button,
+    .stNumberInput button {
+        background: transparent !important;
+        border: none !important;
+        outline: none !important;
+        box-shadow: none !important;
+        color: #676c77 !important;
+    }
+    .stTextInput [data-baseweb="input"] button:hover,
+    .stNumberInput button:hover {
+        color: #818cf8 !important;
+        background: transparent !important;
+    }
+
+    /* Hide "Press Enter to submit form" / "Press Enter to apply" hints */
+    [data-testid="InputInstructions"] {
+        display: none !important;
     }
 
     .stSelectbox > div > div {
