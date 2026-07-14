@@ -749,20 +749,20 @@ def calc_student_monthly_payment(monthly_borrow: float, annual_rate: float,
         return balance_at_end / n
     return balance_at_end * r * (1 + r) ** n / ((1 + r) ** n - 1)
 
-def calc_loan_balance(principal: float, annual_rate: float, monthly_payment: float,
-                      start_date, loan_type: str = 'standard',
-                      monthly_borrow: float = 0.0, study_end_date=None,
-                      repayment_years: float = 10.0) -> float:
-    """Remaining loan balance today — handles both standard and student loans.
+def calc_loan_balance_at(at_date, principal: float, annual_rate: float,
+                         monthly_payment: float, start_date,
+                         loan_type: str = 'standard', monthly_borrow: float = 0.0,
+                         study_end_date=None) -> float:
+    """Loan balance at an arbitrary date — handles both standard and student loans.
 
     Student loan model (simplified):
-      - During borrowing (no end_date set, or today <= end_date):
+      - During borrowing (no end_date set, or at_date <= end_date):
           balance = FV of annuity (monthly borrows accumulate with interest)
-      - After borrowing stopped (today > end_date):
+      - After borrowing stopped (at_date > end_date):
           balance = FV-at-end-date, then compounded with interest only (no repayment)
     """
-    _today = datetime.now(ZoneInfo("Europe/Amsterdam")).date()
-    r      = annual_rate / 100 / 12
+    _at = pd.to_datetime(str(at_date)).date()
+    r   = annual_rate / 100 / 12
 
     if loan_type == 'student':
         # Determine whether borrowing has stopped
@@ -773,24 +773,35 @@ def calc_loan_balance(principal: float, annual_rate: float, monthly_payment: flo
             except Exception:
                 _end_date = None
 
-        if _end_date is None or _today <= _end_date:
-            # Still borrowing: accumulate FV of annuity to today
-            return _student_balance_at(monthly_borrow, r, start_date, _today)
+        if _end_date is None or _at <= _end_date:
+            # Still borrowing: accumulate FV of annuity to at_date
+            return _student_balance_at(monthly_borrow, r, start_date, _at)
         else:
             # Borrowing stopped: FV at end_date, then compound interest only
             balance_at_end = _student_balance_at(monthly_borrow, r, start_date, _end_date)
-            n_after = max((_today.year - _end_date.year) * 12
-                          + (_today.month - _end_date.month), 0)
+            n_after = max((_at.year - _end_date.year) * 12
+                          + (_at.month - _end_date.month), 0)
             return balance_at_end * (1 + r) ** n_after
 
     # Standard loan
     _start  = pd.to_datetime(str(start_date)).date()
-    months  = max((_today.year - _start.year) * 12 + (_today.month - _start.month), 0)
+    months  = max((_at.year - _start.year) * 12 + (_at.month - _start.month), 0)
     if r == 0:
         return max(float(principal) - float(monthly_payment) * months, 0.0)
     factor  = (1 + r) ** months
     balance = float(principal) * factor - float(monthly_payment) * (factor - 1) / r
     return max(balance, 0.0)
+
+def calc_loan_balance(principal: float, annual_rate: float, monthly_payment: float,
+                      start_date, loan_type: str = 'standard',
+                      monthly_borrow: float = 0.0, study_end_date=None,
+                      repayment_years: float = 10.0) -> float:
+    """Remaining loan balance today (see calc_loan_balance_at)."""
+    _today = datetime.now(ZoneInfo("Europe/Amsterdam")).date()
+    return calc_loan_balance_at(_today, principal, annual_rate, monthly_payment,
+                                start_date, loan_type=loan_type,
+                                monthly_borrow=monthly_borrow,
+                                study_end_date=study_end_date)
 
 def _loan_current_monthly_payment(row) -> float:
     """The actual monthly cash outflow for this loan today.
@@ -950,7 +961,7 @@ if (
 # -------------------------
 with st.sidebar.expander("Add Transaction", expanded=False):
     trans_type = st.selectbox("Transaction Type", ['Buy', 'Sell', 'Dividend', 'Staking', 'Staking Reward', 'Transfer'], key="add_trans_type")
-    transaction_date = st.date_input("Transaction Date", value=datetime.today(), key="add_date")
+    transaction_date = st.date_input("Transaction Date", value=datetime.now(ZoneInfo("Europe/Amsterdam")).date(), key="add_date")
 
     if trans_type != 'Dividend':
         transaction_time_str = st.text_input("Transaction Time (HH:MM, 24-hour format)", value="12:00", placeholder="e.g., 09:30", key="add_time")
@@ -1531,7 +1542,6 @@ def compute_portfolio(transactions_df=None, cash_balance_local=None):
 
     aggregated = {}
     realized = 0.0
-    tao_present = 'TAO-EUR' in trans['Ticker'].values if 'Ticker' in trans.columns else False
     for idx, row in trans.iterrows():
         ticker = row['Ticker']
         ticker = 'VUSA.AS' if ticker == 'VUSA' else 'VWRL.AS' if ticker == 'VWRL' else ticker
@@ -1551,12 +1561,12 @@ def compute_portfolio(transactions_df=None, cash_balance_local=None):
         fee_unit = row['Fee Unit'] if pd.notnull(row.get('Fee Unit', 'None')) else 'None'
 
         if trans_type == 'Buy':
+            # Buy fee is part of the cost basis only — it shows up once,
+            # as a lower unrealized P/L (not also as a realized expense).
             fee_eur = fee_amount if fee_unit == 'EUR' else 0.0
             c += quantity * purchase_price + fee_eur
             s += quantity * purchase_price
             q += quantity
-            if fee_unit == 'EUR':
-                realized -= fee_amount
         elif trans_type == 'Sell':
             fee_eur = fee_amount if fee_unit == 'EUR' else 0.0
             if q > 0:
@@ -1580,15 +1590,12 @@ def compute_portfolio(transactions_df=None, cash_balance_local=None):
             q += quantity
         elif trans_type == 'Transfer':
             if fee_unit == 'EUR':
+                # Cash expense — hits realized once, cost basis untouched
                 realized -= fee_amount
-                c -= fee_amount
             elif fee_unit == 'Asset':
-                current_price = get_price(ticker)
-                if current_price == 0.0:
-                    current_price = s / q if q > 0 else purchase_price
-                fee_eur = fee_amount * current_price
-                realized -= fee_eur
-                c -= fee_eur
+                # Fee paid in tokens: holdings shrink, cost basis stays.
+                # The loss shows up once, as a smaller position value.
+                q -= fee_amount
         aggregated[ticker]['Quantity'] = max(q, 0.0)
         aggregated[ticker]['Cost Basis'] = max(c, 0.0)
         aggregated[ticker]['Total Share Cost'] = max(s, 0.0)
@@ -1596,7 +1603,7 @@ def compute_portfolio(transactions_df=None, cash_balance_local=None):
     portfolio_list = []
     unrealized_total = 0.0
     total_invested = 0.0
-    tao_excluded_reason = None
+    _zero_price_tickers = []
     for ticker, data in aggregated.items():
         if data['Quantity'] > 0:
             current_price = get_price(ticker)
@@ -1614,15 +1621,17 @@ def compute_portfolio(transactions_df=None, cash_balance_local=None):
                 'Value': value,
                 'Unrealized Profit/Loss': unrealized
             })
-            if current_price == 0.0 and ticker == 'TAO-EUR':
-                tao_excluded_reason = "Price = 0.0 (Yahoo Finance failed to fetch price)"
-        elif ticker == 'TAO-EUR':
-            tao_excluded_reason = f"Quantity <= 0 ({data['Quantity']:.12f}) after processing all transactions"
+            if current_price == 0.0:
+                _zero_price_tickers.append(ticker)
     portfolio_df = pd.DataFrame(portfolio_list)
     total_profit = realized + unrealized_total
     profit_percentage = (total_profit / total_invested * 100) if total_invested > 0 else 0.0
-    if tao_present and (portfolio_df.empty or 'TAO-EUR' not in portfolio_df['Ticker'].values):
-        st.error(f"TAO-EUR is present in transactions but missing from portfolio. Reason: {tao_excluded_reason or 'Unknown error in processing'}.")
+    if _zero_price_tickers:
+        st.warning(
+            f"Geen prijs gevonden voor: {', '.join(_zero_price_tickers)}. "
+            f"Waarde en P/L van deze posities staan tijdelijk op €0 — "
+            f"controleer de ticker of probeer Refresh."
+        )
     return portfolio_df, realized, unrealized_total, total_profit, profit_percentage
 
 portfolio_df, realized, unrealized, total_profit, profit_percentage = compute_portfolio()
@@ -1690,6 +1699,20 @@ with _rcol2:
     if st.button("Refresh", use_container_width=True):
         st.cache_data.clear()
         st.rerun()
+
+# Shared Plotly chart layout (used by History and Charts tabs)
+_CHART_LAYOUT = dict(
+    plot_bgcolor="#080c18",
+    paper_bgcolor="#080c18",
+    font=dict(family="Inter", color="#5c5a54", size=11),
+    xaxis=dict(gridcolor="#192138", linecolor="#192138", tickfont=dict(color="#5c5a54"), zeroline=False),
+    yaxis=dict(gridcolor="#192138", linecolor="#192138", tickfont=dict(color="#5c5a54"), zeroline=False),
+    margin=dict(l=10, r=10, t=100, b=10),
+    hovermode="x unified",
+    hoverlabel=dict(bgcolor="#0c1120", bordercolor="#192138", font=dict(family="Inter", color="#f0ece0", size=12)),
+    legend=dict(orientation="h", yanchor="bottom", y=1.06, xanchor="left", x=0,
+                font=dict(family="Inter", color="#a8a49a", size=11), bgcolor="rgba(0,0,0,0)", borderwidth=0),
+)
 
 # -------------------------
 # Navigation tabs
@@ -1799,12 +1822,13 @@ with tab_history:
 
     trans_df = st.session_state.get("transactions", pd.DataFrame())
     if not trans_df.empty:
-        fees = trans_df.loc[trans_df["Fee Unit"] == "EUR", "Fee Amount"].sum() if "Fee Unit" in trans_df.columns else trans_df["Fee Amount"].sum()
         dividends = trans_df.loc[trans_df["Type"] == "Dividend", "Income"].sum() if "Income" in trans_df.columns else 0.0
     else:
-        fees = dividends = 0.0
+        dividends = 0.0
 
-    no_investment_total = total_invested + bank_total + broker_cash + fees - dividends
+    # Baseline: what you'd have if the invested money had stayed cash.
+    # Buy fees are already inside the cost basis, so no separate fee term.
+    no_investment_total = total_invested + bank_total + broker_cash - dividends
 
     today = datetime.now(ZoneInfo("Europe/Amsterdam")).date()
     save_portfolio_value_entry(today, total_now, no_investment_total)
@@ -1821,19 +1845,6 @@ with tab_history:
             "total_value": "Total Portfolio Value (€)",
             "no_investment_value": "No Investment (€)"
         })
-
-        _CHART_LAYOUT = dict(
-            plot_bgcolor="#080c18",
-            paper_bgcolor="#080c18",
-            font=dict(family="Inter", color="#5c5a54", size=11),
-            xaxis=dict(gridcolor="#192138", linecolor="#192138", tickfont=dict(color="#5c5a54"), zeroline=False),
-            yaxis=dict(gridcolor="#192138", linecolor="#192138", tickfont=dict(color="#5c5a54"), zeroline=False),
-            margin=dict(l=10, r=10, t=100, b=10),
-            hovermode="x unified",
-            hoverlabel=dict(bgcolor="#0c1120", bordercolor="#192138", font=dict(family="Inter", color="#f0ece0", size=12)),
-            legend=dict(orientation="h", yanchor="bottom", y=1.06, xanchor="left", x=0,
-                        font=dict(family="Inter", color="#a8a49a", size=11), bgcolor="rgba(0,0,0,0)", borderwidth=0),
-        )
 
         fig_total = go.Figure()
         fig_total.add_trace(go.Scatter(
@@ -1921,10 +1932,16 @@ with tab_overview:
         # Tag each asset with its category
         portfolio_df['Category'] = portfolio_df['Ticker'].apply(get_category)
 
-        if _view == "Investments Only":
-            display_df = portfolio_df.copy()
-        else:
-            display_df = portfolio_df.copy()
+        display_df = portfolio_df.copy()
+
+        # Per-position % return and portfolio weight
+        _inv_total_w = display_df['Value'].sum()
+        display_df['P/L %'] = display_df.apply(
+            lambda r: (r['Unrealized Profit/Loss'] / r['Cost Basis'] * 100)
+            if r['Cost Basis'] > 0 else 0.0, axis=1)
+        display_df['Weight %'] = (
+            display_df['Value'] / _inv_total_w * 100 if _inv_total_w > 0 else 0.0
+        )
 
         portfolio_df_display = display_df.rename(columns={
             "Ticker": "Asset",
@@ -1938,14 +1955,20 @@ with tab_overview:
         })
 
         st.dataframe(
-            portfolio_df_display[["Asset","Type","Qty","GIP(€)","Invested(€)","Price(€)","Value(€)","Unrealized P/L (€)"]].style.format({
+            portfolio_df_display[["Asset","Type","Qty","GIP(€)","Invested(€)","Price(€)","Value(€)","Unrealized P/L (€)","P/L %","Weight %"]].style.format({
                 "Qty": "{:.8f}",
                 "GIP(€)": "€{:.4f}",
                 "Invested(€)": "€{:.2f}",
                 "Price(€)": "€{:.2f}",
                 "Value(€)": "€{:.2f}",
-                "Unrealized P/L (€)": "€{:.2f}"
-            }),
+                "Unrealized P/L (€)": "€{:.2f}",
+                "P/L %": "{:+.1f}%",
+                "Weight %": "{:.1f}%"
+            }).map(
+                lambda v: 'color:#27ae7a' if isinstance(v, (int, float)) and v > 0
+                else ('color:#c94c4c' if isinstance(v, (int, float)) and v < 0 else ''),
+                subset=['P/L %']
+            ),
             use_container_width=True
         )
 
@@ -2037,6 +2060,45 @@ with tab_overview:
             }),
             use_container_width=True
         )
+
+    # ── Dividend Overview ──
+    _div_tx = st.session_state.transactions[
+        st.session_state.transactions['Type'] == 'Dividend'
+    ].copy()
+    if not _div_tx.empty:
+        st.markdown("<h2 style='margin-top:1.5rem;'><span class='material-symbols-outlined' style='font-size:20px;'>payments</span> Dividends</h2>", unsafe_allow_html=True)
+
+        _div_tx['Year'] = pd.to_datetime(_div_tx['Date'], errors='coerce').dt.year
+        _total_div = float(_div_tx['Income'].sum())
+        _12m_ago = datetime.now(ZoneInfo("Europe/Amsterdam")).date() - timedelta(days=365)
+        _div_12m = float(_div_tx.loc[
+            pd.to_datetime(_div_tx['Date'], errors='coerce').dt.date >= _12m_ago, 'Income'
+        ].sum())
+
+        dv1, dv2 = st.columns(2)
+        dv1.metric("Totaal ontvangen dividend", f"€{_total_div:,.2f}")
+        dv2.metric("Laatste 12 maanden", f"€{_div_12m:,.2f}")
+
+        dcol1, dcol2 = st.columns(2)
+        with dcol1:
+            st.markdown("### Per asset")
+            _div_by_ticker = _div_tx.groupby('Ticker').agg(
+                Totaal=('Income', 'sum'),
+                Uitkeringen=('Income', 'count'),
+            ).reset_index().sort_values('Totaal', ascending=False)
+            st.dataframe(
+                _div_by_ticker.style.format({'Totaal': '€{:.2f}'}),
+                use_container_width=True, hide_index=True
+            )
+        with dcol2:
+            st.markdown("### Per jaar")
+            _div_by_year = _div_tx.groupby('Year')['Income'].sum().reset_index()
+            _div_by_year.columns = ['Jaar', 'Totaal']
+            _div_by_year = _div_by_year.sort_values('Jaar', ascending=False)
+            st.dataframe(
+                _div_by_year.style.format({'Totaal': '€{:.2f}', 'Jaar': '{:.0f}'}),
+                use_container_width=True, hide_index=True
+            )
 
     st.markdown("<h2 style='margin-top:1.5rem;'><span class='material-symbols-outlined' style='font-size:20px;'>receipt_long</span> All Transactions</h2>", unsafe_allow_html=True)
     if not st.session_state.transactions.empty:
@@ -2507,6 +2569,66 @@ with tab_planning:
                 unsafe_allow_html=True
             )
 
+        # ── Net worth projection ──
+        st.markdown("<h3 style='margin-top:1.2rem;'>Net Worth Projectie</h3>", unsafe_allow_html=True)
+
+        _assets_now_total = _assets + _cb + _cr + _ci
+        _proj_dates, _proj_with, _proj_without = [], [], []
+        for _m in range(months_remaining + 1):
+            _d = (pd.Timestamp(_today) + pd.DateOffset(months=_m)).date()
+            _growth = (1 + r) ** _m
+            _contrib_fv = (monthly_invest_needed * ((_growth - 1) / r) if r > 0
+                           else monthly_invest_needed * _m)
+            # Debt at this future month (student loans keep growing!)
+            _debt_m = 0.0
+            if not st.session_state.loans.empty:
+                _debt_m = sum(
+                    calc_loan_balance_at(
+                        _d, float(lrow.get('Principal', 0.0)),
+                        float(lrow.get('Annual Rate', 0.0)),
+                        float(lrow.get('Monthly Payment', 0.0)), lrow.get('Start Date'),
+                        loan_type=str(lrow.get('Loan Type', 'standard')),
+                        monthly_borrow=float(lrow.get('Monthly Borrow', 0.0)),
+                        study_end_date=lrow.get('Study End Date'),
+                    )
+                    for _, lrow in st.session_state.loans.iterrows()
+                )
+            _proj_dates.append(_d)
+            _proj_with.append(_assets_now_total * _growth + _contrib_fv - _debt_m)
+            _proj_without.append(_assets_now_total * _growth - _debt_m)
+
+        _fig_proj = go.Figure()
+        _fig_proj.add_trace(go.Scatter(
+            x=_proj_dates, y=_proj_with, mode="lines",
+            name=f"Met €{monthly_invest_needed:,.0f}/mo inleg",
+            line=dict(color="#c9a84c", width=2.5),
+            hovertemplate="€%{y:,.0f}<extra>Met inleg</extra>"
+        ))
+        _fig_proj.add_trace(go.Scatter(
+            x=_proj_dates, y=_proj_without, mode="lines",
+            name="Zonder extra inleg",
+            line=dict(color="#a8a49a", width=2, dash="dot"),
+            hovertemplate="€%{y:,.0f}<extra>Zonder inleg</extra>"
+        ))
+        _fig_proj.add_hline(
+            y=goal_amount, line_dash="dash", line_color="#27ae7a",
+            annotation_text=f"Doel €{goal_amount:,.0f}",
+            annotation_position="top left",
+            annotation_font=dict(family="Inter", color="#27ae7a", size=11)
+        )
+        _fig_proj.update_layout(
+            title=dict(text="Verwacht vermogen tot je doeldatum",
+                       font=dict(family="Ropa Sans", color="#f0ece0", size=15), x=0),
+            yaxis_title="Net worth (€)",
+            **_CHART_LAYOUT
+        )
+        st.plotly_chart(_fig_proj, use_container_width=True)
+        st.caption(
+            f"Aannames: {expected_return:.1f}% jaarrendement op al je vermogen, "
+            f"vaste maandelijkse inleg van €{monthly_invest_needed:,.0f}, "
+            f"leningen groeien/dalen volgens hun eigen rente en aflossing."
+        )
+
         # ── Work hours breakdown ──
         st.markdown("<h3 style='margin-top:1.2rem;'>How much do you need to work this month?</h3>", unsafe_allow_html=True)
 
@@ -2666,6 +2788,10 @@ with tab_planning:
             # Annualised portfolio return
             _ann_pct = calc_annualized_return(profit_percentage, st.session_state.transactions)
 
+            # Accumulate totals across loans (used in the summary below)
+            _sum_interest_y = 0.0
+            _sum_gain_y     = 0.0
+
             for _, _lr in st.session_state.loans.iterrows():
                 _rate    = float(_lr['Annual Rate'])
                 _ltype_l = str(_lr.get('Loan Type', 'standard'))
@@ -2687,6 +2813,9 @@ with tab_planning:
                 # Investment return on the borrowed amount
                 _annual_gain   = _principal * _ann_pct / 100
                 _monthly_gain  = _annual_gain / 12
+
+                _sum_interest_y += _annual_interest
+                _sum_gain_y     += _annual_gain
 
                 # Net and spread
                 _net_annual = _annual_gain - _annual_interest
@@ -2758,16 +2887,12 @@ with tab_planning:
                     unsafe_allow_html=True
                 )
 
-            # Overall summary if multiple loans
+            # Overall summary if multiple loans — uses per-loan accumulated
+            # totals so student loans (Principal = 0) are counted correctly
             if len(st.session_state.loans) > 1:
-                _total_principal  = float(st.session_state.loans['Principal'].sum())
-                _total_interest_y = sum(
-                    calc_loan_balance(r['Principal'], r['Annual Rate'],
-                                      r['Monthly Payment'], r['Start Date']) * r['Annual Rate'] / 100
-                    for _, r in st.session_state.loans.iterrows()
-                )
-                _total_gain_y  = _total_principal * _ann_pct / 100
-                _total_net_y   = _total_gain_y - _total_interest_y
+                _total_interest_y = _sum_interest_y
+                _total_gain_y     = _sum_gain_y
+                _total_net_y      = _total_gain_y - _total_interest_y
                 _tc = "#27ae7a" if _total_net_y >= 0 else "#c94c4c"
                 st.markdown(
                     f"<div style='background:#0c1120; border:1px solid #192138; border-radius:6px; "
@@ -2834,6 +2959,64 @@ with tab_planning:
             st.info("No transactions yet.")
     else:
         st.info("Set your hourly rate and goal above to see your plan.")
+
+    # ── Box 3 indicatie (NL vermogensbelasting) ──
+    st.markdown("---")
+    st.markdown("<h3>Box 3 Indicatie (NL)</h3>", unsafe_allow_html=True)
+    st.markdown(
+        "<p style='font-family:Inter; font-size:0.78rem; color:#a8a49a; margin-bottom:0.75rem;'>"
+        "Schatting van je vermogensbelasting volgens de overbruggingswet, op basis van je "
+        "huidige vermogen als benadering van de peildatum (1 januari). "
+        "Indicatie — geen fiscaal advies; controleer de actuele percentages op belastingdienst.nl.</p>",
+        unsafe_allow_html=True
+    )
+
+    b3c1, b3c2, b3c3 = st.columns(3)
+    with b3c1:
+        _b3_vrij = st.number_input("Heffingsvrij vermogen (€)", min_value=0.0,
+                                    value=57684.0, step=100.0, format="%.0f", key="b3_vrij")
+        _b3_tarief = st.number_input("Tarief (%)", min_value=0.0, max_value=100.0,
+                                      value=36.0, step=1.0, format="%.0f", key="b3_tarief")
+    with b3c2:
+        _b3_r_spaar = st.number_input("Forfait sparen (%)", min_value=0.0, max_value=20.0,
+                                       value=1.44, step=0.01, format="%.2f", key="b3_rs")
+        _b3_r_beleg = st.number_input("Forfait beleggen (%)", min_value=0.0, max_value=20.0,
+                                       value=5.88, step=0.01, format="%.2f", key="b3_rb")
+    with b3c3:
+        _b3_r_schuld = st.number_input("Forfait schulden (%)", min_value=0.0, max_value=20.0,
+                                        value=2.62, step=0.01, format="%.2f", key="b3_rd")
+        _b3_drempel = st.number_input("Schuldendrempel (€)", min_value=0.0,
+                                       value=3800.0, step=100.0, format="%.0f", key="b3_drempel")
+
+    _b3_spaar  = _cash + _credit + _cic                       # banktegoeden + broker cash
+    _b3_beleg  = _total_assets                                # beleggingen (huidige waarde)
+    _b3_schuld = max(_total_debt - _b3_drempel, 0.0)          # schulden boven drempel
+
+    _b3_rendement = (_b3_spaar * _b3_r_spaar / 100
+                     + _b3_beleg * _b3_r_beleg / 100
+                     - _b3_schuld * _b3_r_schuld / 100)
+    _b3_grondslag = _b3_spaar + _b3_beleg - _b3_schuld
+    _b3_belastbaar_grondslag = max(_b3_grondslag - _b3_vrij, 0.0)
+
+    if _b3_grondslag > 0 and _b3_belastbaar_grondslag > 0 and _b3_rendement > 0:
+        _b3_aandeel  = _b3_belastbaar_grondslag / _b3_grondslag
+        _b3_voordeel = _b3_rendement * _b3_aandeel
+        _b3_tax      = _b3_voordeel * _b3_tarief / 100
+    else:
+        _b3_voordeel = 0.0
+        _b3_tax      = 0.0
+
+    b3m1, b3m2, b3m3, b3m4 = st.columns(4)
+    b3m1.metric("Grondslag (bezit − schuld)", f"€{_b3_grondslag:,.0f}",
+                help=f"Sparen €{_b3_spaar:,.0f} + beleggen €{_b3_beleg:,.0f} − schuld €{_b3_schuld:,.0f}")
+    b3m2.metric("Boven heffingsvrij", f"€{_b3_belastbaar_grondslag:,.0f}")
+    b3m3.metric("Belastbaar rendement", f"€{_b3_voordeel:,.0f}",
+                help="Forfaitair rendement × aandeel boven het heffingsvrij vermogen")
+    b3m4.metric("Geschatte Box 3 belasting", f"€{_b3_tax:,.0f}")
+
+    if _b3_belastbaar_grondslag == 0:
+        st.caption(f"✓ Je vermogen (€{_b3_grondslag:,.0f}) zit onder het heffingsvrij "
+                   f"vermogen van €{_b3_vrij:,.0f} — geen Box 3 belasting verschuldigd.")
 
 # -------------------------
 # Footer
