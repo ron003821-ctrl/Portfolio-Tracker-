@@ -8,6 +8,7 @@ Required environment variables: SUPABASE_URL, SUPABASE_KEY
 The holdings / pricing logic mirrors portfolio_tracker.py.
 """
 import os
+import sys
 from datetime import datetime
 from zoneinfo import ZoneInfo
 
@@ -16,7 +17,23 @@ import requests
 import yfinance as yf
 from supabase import create_client
 
-supabase = create_client(os.environ["SUPABASE_URL"], os.environ["SUPABASE_KEY"])
+_url = (os.environ.get("SUPABASE_URL") or "").strip().rstrip("/")
+_key = (os.environ.get("SUPABASE_KEY") or "").strip()
+
+if not _url or not _key:
+    sys.exit("ERROR: SUPABASE_URL and/or SUPABASE_KEY secrets are missing.")
+if "supabase.com/dashboard" in _url:
+    sys.exit(
+        "ERROR: SUPABASE_URL is the dashboard link. Use the Project URL instead "
+        "(Supabase > Settings > API), it looks like: https://<project-ref>.supabase.co"
+    )
+if not _url.startswith("https://") or ".supabase.co" not in _url:
+    sys.exit(
+        f"ERROR: SUPABASE_URL looks wrong (got: {_url[:40]}...). "
+        "Expected format: https://<project-ref>.supabase.co"
+    )
+
+supabase = create_client(_url, _key)
 
 # ── Pricing (mirrors portfolio_tracker.py) ─────────────────────────────
 _SUFFIX_CURRENCY = {
