@@ -144,9 +144,10 @@ def main():
 
     aggregated = {}
     dividends = 0.0
+    _ALIASES = {'VUSA': 'VUSA.AS', 'VWRL': 'VWRL.AS', 'QDVE': 'QDVE.DE'}
     for row in trans:
-        ticker = row['ticker']
-        ticker = 'VUSA.AS' if ticker == 'VUSA' else 'VWRL.AS' if ticker == 'VWRL' else ticker
+        ticker = str(row['ticker']).strip().upper()
+        ticker = _ALIASES.get(ticker, ticker)
         agg = aggregated.setdefault(ticker, {'q': 0.0, 'c': 0.0})
         qty = float(row.get('quantity') or 0)
         price = float(row.get('purchase_price') or 0)

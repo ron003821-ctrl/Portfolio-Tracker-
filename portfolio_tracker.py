@@ -45,6 +45,17 @@ _KNOWN_ETFS = {
     'ARKK','XLK','XLF','VNQ','SCHD',
 }
 
+def normalize_ticker(ticker: str) -> str:
+    """One canonical form per asset: uppercase, trimmed, known aliases mapped.
+    Prevents 'VUSA', 'Vusa' and 'VUSA.AS' from showing up as three assets."""
+    t = str(ticker).strip().upper()
+    _ALIASES = {
+        'VUSA': 'VUSA.AS',
+        'VWRL': 'VWRL.AS',
+        'QDVE': 'QDVE.DE',
+    }
+    return _ALIASES.get(t, t)
+
 def auto_detect_category(ticker: str) -> str:
     """Crypto → known list. ETF → known ETF set. Everything else → Stock.
     Exchange suffixes (.AS, .DE …) are NOT used to detect ETFs because those
@@ -493,7 +504,7 @@ def add_transaction_db(trans_date, trans_time, trans_type, ticker, quantity, pur
         date_str = trans_date.isoformat() if hasattr(trans_date, 'isoformat') else str(trans_date)
         time_str = trans_time.strftime("%H:%M") if hasattr(trans_time, 'strftime') else str(trans_time)
         supabase.table('transactions').insert({
-            'date': date_str, 'time': time_str, 'type': trans_type, 'ticker': ticker,
+            'date': date_str, 'time': time_str, 'type': trans_type, 'ticker': normalize_ticker(ticker),
             'quantity': float(quantity), 'purchase_price': float(purchase_price),
             'fee_amount': float(fee_amount), 'fee_unit': fee_unit, 'income': float(income)
         }).execute()
@@ -507,7 +518,7 @@ def update_transaction_db(trans_id, trans_date, trans_time, trans_type, ticker, 
         date_str = trans_date.isoformat() if hasattr(trans_date, 'isoformat') else str(trans_date)
         time_str = trans_time.strftime("%H:%M") if hasattr(trans_time, 'strftime') else str(trans_time)
         supabase.table('transactions').update({
-            'date': date_str, 'time': time_str, 'type': trans_type, 'ticker': ticker,
+            'date': date_str, 'time': time_str, 'type': trans_type, 'ticker': normalize_ticker(ticker),
             'quantity': float(quantity), 'purchase_price': float(purchase_price),
             'fee_amount': float(fee_amount), 'fee_unit': fee_unit, 'income': float(income)
         }).eq('id', int(trans_id)).execute()
@@ -1554,8 +1565,7 @@ def compute_portfolio(transactions_df=None, cash_balance_local=None):
     aggregated = {}
     realized = 0.0
     for idx, row in trans.iterrows():
-        ticker = row['Ticker']
-        ticker = 'VUSA.AS' if ticker == 'VUSA' else 'VWRL.AS' if ticker == 'VWRL' else ticker
+        ticker = normalize_ticker(row['Ticker'])
         if ticker not in aggregated:
             aggregated[ticker] = {'Quantity': 0.0, 'Cost Basis': 0.0, 'Total Share Cost': 0.0}
         q = aggregated[ticker]['Quantity']
@@ -2109,6 +2119,7 @@ with tab_overview:
     if not staking_rewards_df.empty:
         st.markdown("<h2 style='margin-top:1.5rem;'><span class='material-symbols-outlined' style='font-size:20px;'>toll</span> Staking Rewards</h2>", unsafe_allow_html=True)
 
+        staking_rewards_df['Ticker'] = staking_rewards_df['Ticker'].apply(normalize_ticker)
         rewards_summary = staking_rewards_df.groupby('Ticker').agg(
             Tokens_Earned=('Quantity', 'sum'),
             Num_Rewards=('Quantity', 'count')
@@ -2157,6 +2168,7 @@ with tab_overview:
     if not _div_tx.empty:
         st.markdown("<h2 style='margin-top:1.5rem;'><span class='material-symbols-outlined' style='font-size:20px;'>payments</span> Dividends</h2>", unsafe_allow_html=True)
 
+        _div_tx['Ticker'] = _div_tx['Ticker'].apply(normalize_ticker)
         _div_tx['Year'] = pd.to_datetime(_div_tx['Date'], errors='coerce').dt.year
         _total_div = float(_div_tx['Income'].sum())
         _12m_ago = datetime.now(ZoneInfo("Europe/Amsterdam")).date() - timedelta(days=365)
@@ -2192,7 +2204,9 @@ with tab_overview:
     st.markdown("<div style='height:0.8rem'></div>", unsafe_allow_html=True)
     with st.expander(f"All Transactions ({len(st.session_state.transactions)})", expanded=False):
         if not st.session_state.transactions.empty:
-            st.dataframe(st.session_state.transactions[TRANS_DISPLAY_COLS].style.format({
+            _tx_view = st.session_state.transactions[TRANS_DISPLAY_COLS].copy()
+            _tx_view['Ticker'] = _tx_view['Ticker'].apply(normalize_ticker)
+            st.dataframe(_tx_view.style.format({
                 'Quantity': '{:.8f}',
                 'Purchase Price': '€{:.2f}',
                 'Fee Amount': '{:.6f}',
