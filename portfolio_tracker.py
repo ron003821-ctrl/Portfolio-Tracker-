@@ -269,12 +269,22 @@ st.markdown("""
         transition: all 0.15s !important;
     }
 
-    .stButton > button:hover {
+    .stButton > button:hover,
+    .stButton > button:focus,
+    .stButton > button:focus:not(:active),
+    .stButton > button:focus-visible,
+    .stButton > button:active {
         background-color: rgba(129,140,248,0.08) !important;
         border-color: #818cf8 !important;
         color: #818cf8 !important;
         transform: none !important;
         box-shadow: none !important;
+        outline: none !important;
+    }
+
+    /* Kill Streamlit's default red hover/focus accents on all buttons */
+    button:hover, button:focus, button:focus-visible {
+        outline: none !important;
     }
 
     /* ── Metric Cards — 6px radius ── */
@@ -872,24 +882,75 @@ if "logged_in" not in st.session_state:
     st.session_state.logged_in = False
 
 if not st.session_state.logged_in:
-    col1, col2, col3 = st.columns([1, 1.1, 1])
+    # Login-specific styling: card around the form + filled submit button
+    st.markdown("""
+    <style>
+        [data-testid="stSidebar"] { display: none !important; }
+        [data-testid="stForm"] {
+            background: #16171e !important;
+            border: 1px solid #262833 !important;
+            border-radius: 14px !important;
+            padding: 1.8rem 1.8rem 1.2rem !important;
+            box-shadow: 0 24px 60px rgba(0,0,0,0.45) !important;
+        }
+        [data-testid="stFormSubmitButton"] > button {
+            background: linear-gradient(135deg, #818cf8 0%, #6366f1 100%) !important;
+            color: #0e0f14 !important;
+            border: none !important;
+            border-radius: 8px !important;
+            font-family: 'Inter', sans-serif !important;
+            font-weight: 600 !important;
+            font-size: 0.8rem !important;
+            letter-spacing: 0.08em !important;
+            text-transform: uppercase !important;
+            padding: 0.55rem 1rem !important;
+            box-shadow: none !important;
+            transition: opacity 0.15s !important;
+        }
+        [data-testid="stFormSubmitButton"] > button:hover,
+        [data-testid="stFormSubmitButton"] > button:focus,
+        [data-testid="stFormSubmitButton"] > button:active {
+            opacity: 0.88 !important;
+            color: #0e0f14 !important;
+            outline: none !important;
+            box-shadow: 0 0 24px rgba(129,140,248,0.35) !important;
+        }
+    </style>
+    """, unsafe_allow_html=True)
+
+    col1, col2, col3 = st.columns([1, 1, 1])
     with col2:
-        st.markdown("<br><br><br>", unsafe_allow_html=True)
+        st.markdown("<div style='height:13vh;'></div>", unsafe_allow_html=True)
         st.markdown("""
-        <div style='text-align:center; margin-bottom:2.5rem;'>
-            <div style='font-family:"Space Grotesk",sans-serif; font-size:2rem; letter-spacing:0.12em; color:#eef0f4; font-weight:400;'>PORTFOLIO</div>
-            <div style='width:40px; height:2px; background:#818cf8; margin:0.5rem auto 0;'></div>
-            <div style='font-family:"Inter",sans-serif; font-size:0.65rem; letter-spacing:0.22em; color:#676c77; text-transform:uppercase; margin-top:0.6rem;'>Wealth Dashboard</div>
+        <div style='text-align:center; margin-bottom:1.8rem;'>
+            <div style='width:54px; height:54px; margin:0 auto 1.1rem; border-radius:14px;
+                        background:linear-gradient(135deg,#818cf8 0%,#6366f1 100%);
+                        display:flex; align-items:center; justify-content:center;
+                        font-family:"Space Grotesk",sans-serif; font-size:1.55rem; font-weight:600;
+                        color:#0e0f14; box-shadow:0 0 40px rgba(129,140,248,0.35);'>P</div>
+            <div style='font-family:"Space Grotesk",sans-serif; font-size:1.8rem; letter-spacing:0.12em; color:#eef0f4; font-weight:500;'>PORTFOLIO</div>
+            <div style='font-family:"Inter",sans-serif; font-size:0.62rem; letter-spacing:0.26em; color:#676c77; text-transform:uppercase; margin-top:0.45rem;'>Wealth Dashboard</div>
         </div>
         """, unsafe_allow_html=True)
-        password = st.text_input("Password", type="password", label_visibility="collapsed", placeholder="Password")
-        st.markdown("<div style='height:0.5rem;'></div>", unsafe_allow_html=True)
-        if st.button("Sign In", use_container_width=True):
+
+        with st.form("login_form"):
+            password = st.text_input("Password", type="password",
+                                     label_visibility="collapsed", placeholder="Wachtwoord")
+            submitted = st.form_submit_button("Inloggen", use_container_width=True)
+
+        if submitted:
             if password == st.secrets["auth"]["password"]:
                 st.session_state.logged_in = True
                 st.rerun()
             else:
-                st.error("Invalid password")
+                st.error("Onjuist wachtwoord")
+
+        st.markdown(
+            "<div style='text-align:center; font-family:Inter; font-size:0.62rem; "
+            "letter-spacing:0.08em; color:#676c77; margin-top:1.1rem;'>"
+            "🔒 Beveiligde persoonlijke omgeving</div>",
+            unsafe_allow_html=True
+        )
     st.stop()
 
 # -------------------------
