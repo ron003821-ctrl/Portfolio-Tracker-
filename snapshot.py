@@ -4,7 +4,7 @@ Computes the current portfolio value + no-investment baseline from Supabase
 data and upserts today's entry into portfolio_value_history, so the History
 chart has a data point every day (not only on days you open the app).
 
-Required environment variables: SUPABASE_URL, SUPABASE_KEY
+Required environment variables: SUPABASE_URL, SUPABASE_KEY (the project's SECRET key)
 The holdings / pricing logic mirrors portfolio_tracker.py.
 """
 import os
@@ -31,6 +31,26 @@ if not _url.startswith("https://") or ".supabase.co" not in _url:
     sys.exit(
         f"ERROR: SUPABASE_URL looks wrong (got: {_url[:40]}...). "
         "Expected format: https://<project-ref>.supabase.co"
+    )
+
+def _is_public_key(key: str) -> bool:
+    """True if `key` is a public (anon / publishable) Supabase key rather than the secret key."""
+    if key.startswith("sb_publishable_"):
+        return True
+    if key.startswith("sb_secret_"):
+        return False
+    try:  # legacy JWT keys: read the role claim
+        import base64, json
+        payload = key.split(".")[1]
+        payload += "=" * (-len(payload) % 4)
+        return json.loads(base64.urlsafe_b64decode(payload)).get("role") == "anon"
+    except Exception:
+        return False
+
+if _is_public_key(_key):
+    sys.exit(
+        "ERROR: SUPABASE_KEY is the public anon/publishable key. Use the project's SECRET key "
+        "(Supabase > Project Settings > API Keys)."
     )
 
 supabase = create_client(_url, _key)

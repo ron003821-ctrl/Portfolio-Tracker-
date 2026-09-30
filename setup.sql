@@ -94,23 +94,17 @@ ALTER TABLE public.loans ADD COLUMN IF NOT EXISTS monthly_borrow FLOAT DEFAULT 0
 ALTER TABLE public.loans ADD COLUMN IF NOT EXISTS study_end_date DATE;
 ALTER TABLE public.loans ADD COLUMN IF NOT EXISTS repayment_years FLOAT DEFAULT 10;
 
--- RLS (run for each table that gives "row-level security policy" errors)
-ALTER TABLE public.allocation_targets ENABLE ROW LEVEL SECURITY;
-ALTER TABLE public.asset_categories ENABLE ROW LEVEL SECURITY;
-ALTER TABLE public.loans ENABLE ROW LEVEL SECURITY;
-ALTER TABLE public.planning_settings ENABLE ROW LEVEL SECURITY;
-ALTER TABLE public.cashflow ENABLE ROW LEVEL SECURITY;
-ALTER TABLE public.transactions ENABLE ROW LEVEL SECURITY;
-ALTER TABLE public.balances ENABLE ROW LEVEL SECURITY;
-ALTER TABLE public.balances_history ENABLE ROW LEVEL SECURITY;
+-- Security model
+-- Both the Streamlit app and snapshot.py run server-side and connect with the
+-- SECRET key (service_role / sb_secret_...), which bypasses RLS.
+-- RLS is enabled with NO policies, so the public anon key cannot read or write anything.
+-- Never put the secret key in client-side code or commit it to git.
+ALTER TABLE public.allocation_targets      ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.asset_categories        ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.loans                   ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.planning_settings       ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.cashflow                ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.transactions            ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.balances                ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.balances_history        ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.portfolio_value_history ENABLE ROW LEVEL SECURITY;
-
-CREATE POLICY IF NOT EXISTS "Allow all" ON public.asset_categories       FOR ALL TO anon USING (true) WITH CHECK (true);
-CREATE POLICY IF NOT EXISTS "Allow all" ON public.loans                   FOR ALL TO anon USING (true) WITH CHECK (true);
-CREATE POLICY IF NOT EXISTS "Allow all" ON public.planning_settings       FOR ALL TO anon USING (true) WITH CHECK (true);
-CREATE POLICY IF NOT EXISTS "Allow all" ON public.cashflow                FOR ALL TO anon USING (true) WITH CHECK (true);
-CREATE POLICY IF NOT EXISTS "Allow all" ON public.transactions            FOR ALL TO anon USING (true) WITH CHECK (true);
-CREATE POLICY IF NOT EXISTS "Allow all" ON public.balances                FOR ALL TO anon USING (true) WITH CHECK (true);
-CREATE POLICY IF NOT EXISTS "Allow all" ON public.balances_history        FOR ALL TO anon USING (true) WITH CHECK (true);
-CREATE POLICY IF NOT EXISTS "Allow all" ON public.portfolio_value_history FOR ALL TO anon USING (true) WITH CHECK (true);
-CREATE POLICY IF NOT EXISTS "Allow all" ON public.allocation_targets      FOR ALL TO anon USING (true) WITH CHECK (true);

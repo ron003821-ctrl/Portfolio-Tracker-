@@ -431,10 +431,29 @@ st.markdown("""
 # -------------------------
 # Supabase
 # -------------------------
+def _is_public_key(key: str) -> bool:
+    """True if `key` is a public (anon / publishable) Supabase key rather than the secret key."""
+    if key.startswith("sb_publishable_"):
+        return True
+    if key.startswith("sb_secret_"):
+        return False
+    try:  # legacy JWT keys: read the role claim
+        import base64, json
+        payload = key.split(".")[1]
+        payload += "=" * (-len(payload) % 4)
+        return json.loads(base64.urlsafe_b64decode(payload)).get("role") == "anon"
+    except Exception:
+        return False
+
 @st.cache_resource
 def init_supabase():
     url = st.secrets["supabase"]["url"]
-    key = st.secrets["supabase"]["key"]
+    key = st.secrets["supabase"]["key"].strip()
+    if _is_public_key(key):
+        raise ValueError(
+            "supabase.key is the public anon/publishable key. The database only accepts the "
+            "SECRET key (Supabase > Project Settings > API Keys)."
+        )
     return create_client(url, key)
 
 try:
