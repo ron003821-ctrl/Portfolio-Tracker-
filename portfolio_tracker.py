@@ -6,6 +6,8 @@ import plotly.express as px
 import plotly.graph_objects as go
 from datetime import datetime, timedelta, time, date, timezone, tzinfo
 from zoneinfo import ZoneInfo
+from finance_utils import (xirr, investment_cashflows, benchmark_value, plan_deposit,
+                           deposit_needed_without_selling, box3_base, next_peildatum, thresholds_for)
 
 st.set_page_config(page_title="Portfolio Tracker", page_icon="", layout="wide")
 
@@ -696,26 +698,32 @@ def save_planning_settings(hourly_rate, goal_amount, target_date, expected_retur
             st.error(f"Error saving planning settings: {e}")
             return False
 
+_TARGET_DEFAULTS = {'etf_pct': 70.0, 'stocks_pct': 10.0, 'crypto_pct': 20.0, 'max_single_pct': 5.0}
+
 def load_allocation_targets():
-    default = {'etf_pct': 50.0, 'max_single_pct': 5.0}
+    """Target split of *investments* (excl. cash): ETF + Stocks + Crypto = 100%."""
+    default = dict(_TARGET_DEFAULTS)
     try:
         res = supabase.table('allocation_targets').select('*').eq('id', 1).execute()
         if res.data:
             row = res.data[0]
-            return {
-                'etf_pct':        float(row.get('etf_pct', 50.0)),
-                'max_single_pct': float(row.get('max_single_pct', 5.0)),
-            }
+            out = {k: float(row.get(k) if row.get(k) is not None else v) for k, v in default.items()}
+            # Guard against legacy rows where the three parts don't add up to 100
+            if abs(out['etf_pct'] + out['stocks_pct'] + out['crypto_pct'] - 100) > 0.5:
+                out['stocks_pct'] = max(100.0 - out['etf_pct'] - out['crypto_pct'], 0.0)
+            return out
         supabase.table('allocation_targets').insert({'id': 1, **default}).execute()
         return default
     except Exception:
         return default
 
-def save_allocation_targets(etf_pct, max_single_pct):
+def save_allocation_targets(etf_pct, stocks_pct, crypto_pct, max_single_pct):
     try:
         supabase.table('allocation_targets').upsert({
             'id': 1,
             'etf_pct':        float(etf_pct),
+            'stocks_pct':     float(stocks_pct),
+            'crypto_pct':     float(crypto_pct),
             'max_single_pct': float(max_single_pct),
         }).execute()
         return True
@@ -1783,6 +1791,13 @@ _total_value = _total_assets + _cash + _credit + _cic
 _loans_summary = get_loans_summary()
 _total_debt    = _loans_summary['total_debt']
 _net_worth     = _total_value - _total_debt
+
+# ─── Money-weighted return (XIRR) of the investments ───
+_today_local      = datetime.now(ZoneInfo("Europe/Amsterdam")).date()
+_invest_value_now = float(portfolio_df['Value'].sum()) if not portfolio_df.empty else 0.0
+_inv_flows        = investment_cashflows(st.session_state.transactions)
+_xirr             = xirr(_inv_flows + [(_today_local, _invest_value_now)]) if _inv_flows else None
+_xirr_pct         = _xirr * 100 if _xirr is not None else None
 _profit_color = "#34d399" if total_profit >= 0 else "#e5484d"
 _profit_sign  = "+" if total_profit >= 0 else ""
 _pct_sign     = "+" if profit_percentage >= 0 else ""
@@ -1858,6 +1873,118 @@ _CHART_LAYOUT = dict(
 # -------------------------
 # Navigation tabs
 # -------------------------
+def _card(title: str, body_html: str, accent: str = "#818cf8") -> str:
+    return (
+        f"<div style='background:#16171e; border:1px solid #262833; border-left:3px solid {accent}; "
+        f"border-radius:8px; padding:1rem 1.2rem; height:100%;'>"
+        f"<div style='font-family:Inter; font-size:0.6rem; text-transform:uppercase; letter-spacing:0.12em; "
+        f"color:#676c77; margin-bottom:0.45rem;'>{title}</div>{body_html}</div>"
+    )
+
+
+@st.cache_data(ttl=6 * 3600)
+def _benchmark_prices(ticker: str) -> pd.DataFrame:
+    return get_historical_data(ticker, period='max')
+
+
+def render_returns_row():
+    """XIRR of the portfolio vs. the same euros put into one world ETF (VWCE)."""
+    bench_ticker = 'VWCE.DE'
+    b_flows = investment_cashflows(st.session_state.transactions, include_dividends=False)
+    b_val = benchmark_value(b_flows, _benchmark_prices(bench_ticker)) if b_flows else None
+    b_xirr = xirr(b_flows + [(_today_local, b_val)]) if b_val else None
+    invested = -sum(a for _, a in b_flows if a < 0)
+
+    c1, c2, c3 = st.columns(3)
+    _x = f"{_xirr_pct:+.1f}%" if _xirr_pct is not None else "—"
+    c1.markdown(_card("Your return per year (XIRR)",
+        f"<div style='font-family:Space Grotesk; font-size:1.5rem; color:#eef0f4;'>{_x}</div>"
+        f"<div style='font-family:Inter; font-size:0.7rem; color:#9ca0ab;'>Weighs each euro by how long it was invested</div>"),
+        unsafe_allow_html=True)
+    if b_val is not None:
+        diff = _invest_value_now - b_val
+        _bx = f"{b_xirr * 100:+.1f}%/yr" if b_xirr is not None else ""
+        c2.markdown(_card("Same euros in VWCE (world ETF)",
+            f"<div style='font-family:Space Grotesk; font-size:1.5rem; color:#eef0f4;'>€{b_val:,.0f}</div>"
+            f"<div style='font-family:Inter; font-size:0.7rem; color:#9ca0ab;'>{_bx} · same dates & amounts</div>", "#34d399"),
+            unsafe_allow_html=True)
+        _col = "#34d399" if diff >= 0 else "#e5484d"
+        c3.markdown(_card("You vs. benchmark",
+            f"<div style='font-family:Space Grotesk; font-size:1.5rem; color:{_col};'>{'+' if diff >= 0 else '−'}€{abs(diff):,.0f}</div>"
+            f"<div style='font-family:Inter; font-size:0.7rem; color:#9ca0ab;'>Your €{_invest_value_now:,.0f} vs €{b_val:,.0f} (invested €{invested:,.0f})</div>", _col),
+            unsafe_allow_html=True)
+    else:
+        c2.markdown(_card("Benchmark", "<div style='font-family:Inter; font-size:0.8rem; color:#9ca0ab;'>"
+                          "No VWCE price history available right now — try Refresh later.</div>", "#34d399"),
+                    unsafe_allow_html=True)
+
+
+def render_year_start_check():
+    """Box 3 base on the next 1 January vs. toeslagen asset limits and the Box 3 allowance."""
+    peil = next_peildatum(_today_local)
+    thr_year, thr = thresholds_for(peil.year)
+    loans = st.session_state.get('loans', pd.DataFrame())
+    debt_peil = 0.0
+    if not loans.empty:
+        for _, r in loans.iterrows():
+            try:
+                debt_peil += calc_loan_balance_at(
+                    peil, float(r.get('Principal', 0.0)), float(r.get('Annual Rate', 0.0)),
+                    float(r.get('Monthly Payment', 0.0)), r.get('Start Date'),
+                    loan_type=str(r.get('Loan Type', 'standard')),
+                    monthly_borrow=float(r.get('Monthly Borrow', 0.0)),
+                    study_end_date=r.get('Study End Date'))
+            except Exception:
+                continue
+    base = box3_base(_total_value, debt_peil, thr['debt_threshold'])
+
+    # Monthly toeslag amounts from the Cashflow tab (matched on category name)
+    cf = st.session_state.get('cashflow', pd.DataFrame())
+    def _monthly(word):
+        if cf is None or cf.empty:
+            return 0.0
+        m = cf['Category'].astype(str).str.lower().str.contains(word)
+        return float(cf.loc[m & (cf['Amount'] > 0), 'Amount'].sum())
+
+    rows = [
+        ("Huurtoeslag", thr['huurtoeslag'], _monthly('huurtoeslag')),
+        ("Zorgtoeslag", thr['zorgtoeslag'], _monthly('zorgtoeslag')),
+        ("Box 3 tax-free allowance", thr['box3_free'], None),
+    ]
+    days = (peil - _today_local).days
+    worst = min(lim - base for _, lim, _m in rows)
+    accent = "#e5484d" if worst < 0 else ("#f5a524" if worst < 5000 else "#34d399")
+
+    with st.expander(f"1 January check — {peil:%d %b %Y} ({days} days)", expanded=worst < 5000):
+        yr_note = "" if thr_year == peil.year else f" Limits shown are {thr_year}'s; {peil.year}'s aren't in the app yet."
+        st.markdown(
+            "<p style='font-family:Inter; font-size:0.78rem; color:#9ca0ab;'>"
+            f"Your assets on 1 January decide toeslagen and Box 3 for the whole year. "
+            f"Assets today <b style='color:#eef0f4;'>€{_total_value:,.0f}</b> − debts above the "
+            f"€{thr['debt_threshold']:,.0f} threshold (loans on {peil:%d-%m-%Y}: €{debt_peil:,.0f}) "
+            f"= <b style='color:#eef0f4;'>€{base:,.0f}</b>.{yr_note}</p>",
+            unsafe_allow_html=True)
+        cols = st.columns(3)
+        for col, (label, lim, monthly) in zip(cols, rows):
+            room = lim - base
+            if room >= 0:
+                val, colr = f"€{room:,.0f} room", ("#f5a524" if room < 5000 else "#34d399")
+            else:
+                val, colr = f"€{-room:,.0f} over", "#e5484d"
+            sub = f"Limit €{lim:,.0f}"
+            if monthly:
+                sub += f" · at stake ≈ €{monthly * 12:,.0f}/yr"
+            col.markdown(_card(label,
+                f"<div style='font-family:Space Grotesk; font-size:1.3rem; color:{colr};'>{val}</div>"
+                f"<div style='font-family:Inter; font-size:0.7rem; color:#9ca0ab;'>{sub}</div>", colr),
+                unsafe_allow_html=True)
+        st.markdown(
+            "<p style='font-family:Inter; font-size:0.68rem; color:#676c77; margin-top:0.6rem;'>"
+            "Estimate using today's prices, single-person limits, and every account you track. "
+            "Confirm with the proefberekening on toeslagen.nl. Update the limits yearly in finance_utils.py.</p>",
+            unsafe_allow_html=True)
+
+
 tab_overview, tab_history, tab_cashflow, tab_allocation, tab_charts, tab_planning = st.tabs([
     "Overview",
     "History",
@@ -2063,6 +2190,10 @@ with tab_history:
 # -------------------------
 with tab_overview:
     st.markdown("<h2><span class='material-symbols-outlined' style='font-size:20px;'>dashboard</span> Dashboard</h2>", unsafe_allow_html=True)
+
+    render_year_start_check()
+    render_returns_row()
+    st.markdown("<div style='height:0.8rem;'></div>", unsafe_allow_html=True)
 
     portfolio_df, realized, unrealized, total_profit, profit_percentage = compute_portfolio()
 
@@ -2477,68 +2608,100 @@ with tab_allocation:
             unsafe_allow_html=True
         )
 
-        st.markdown("<p style='font-family:Inter; font-size:0.75rem; color:#676c77; margin-bottom:0.75rem;'>Adjust the investment split and max concentration below.</p>", unsafe_allow_html=True)
+        st.markdown("<p style='font-family:Inter; font-size:0.75rem; color:#676c77; margin-bottom:0.75rem;'>Target split of your investments (excl. cash). The three must add up to 100%.</p>", unsafe_allow_html=True)
 
-        tc1, tc2 = st.columns(2)
+        tc1, tc2, tc3, tc4 = st.columns(4)
         with tc1:
-            etf_pct = st.number_input("ETF % of investments", min_value=0.0, max_value=100.0,
-                value=tgt.get('etf_pct', 50.0), step=1.0, format="%.0f", key="tgt_etf_pct",
-                help="Target % of your invested money (excl. cash) to hold in ETFs")
+            etf_pct = st.number_input("ETF %", min_value=0.0, max_value=100.0,
+                value=float(tgt.get('etf_pct', 70.0)), step=1.0, format="%.0f", key="tgt_etf_pct")
         with tc2:
+            stocks_pct = st.number_input("Stocks %", min_value=0.0, max_value=100.0,
+                value=float(tgt.get('stocks_pct', 10.0)), step=1.0, format="%.0f", key="tgt_stocks_pct")
+        with tc3:
+            crypto_pct = st.number_input("Crypto %", min_value=0.0, max_value=100.0,
+                value=float(tgt.get('crypto_pct', 20.0)), step=1.0, format="%.0f", key="tgt_crypto_pct")
+        with tc4:
             max_single_pct = st.number_input("Max % per stock / crypto", min_value=0.5, max_value=50.0,
-                value=tgt.get('max_single_pct', 5.0), step=0.5, format="%.1f", key="tgt_max_single",
+                value=float(tgt.get('max_single_pct', 5.0)), step=0.5, format="%.1f", key="tgt_max_single",
                 help="No individual stock or crypto should exceed this % of total investments")
 
-        stock_crypto_pct = 100.0 - etf_pct
-        st.markdown(
-            f"<p style='font-family:Inter; font-size:0.78rem; color:#9ca0ab;'>"
-            f"→ ETF: <b style='color:#34d399;'>{etf_pct:.0f}%</b> of investments &nbsp;|&nbsp; "
-            f"Stocks + Crypto: <b style='color:#60a5fa;'>{stock_crypto_pct:.0f}%</b> of investments &nbsp;|&nbsp; "
-            f"Max per asset: <b style='color:#818cf8;'>{max_single_pct:.1f}%</b></p>",
-            unsafe_allow_html=True
-        )
-
-        if st.button("Save Targets", key="save_targets_btn"):
-            if save_allocation_targets(etf_pct, max_single_pct):
-                st.session_state.allocation_targets = {'etf_pct': etf_pct, 'max_single_pct': max_single_pct}
+        _tgt_sum = etf_pct + stocks_pct + crypto_pct
+        if abs(_tgt_sum - 100) > 0.5:
+            st.warning(f"ETF + Stocks + Crypto = {_tgt_sum:.0f}%. Make them add up to 100% before saving.")
+        elif st.button("Save Targets", key="save_targets_btn"):
+            if save_allocation_targets(etf_pct, stocks_pct, crypto_pct, max_single_pct):
+                st.session_state.allocation_targets = {'etf_pct': etf_pct, 'stocks_pct': stocks_pct,
+                                                       'crypto_pct': crypto_pct, 'max_single_pct': max_single_pct}
                 st.success("Targets saved!")
+
+        allow_selling = st.toggle("Allow selling to rebalance", value=False, key="allow_selling",
+            help="Off: overweight categories are simply paused and new money goes to what is underweight.")
 
         # ── Rebalancing Plan ──
         st.markdown("<h3 style='margin-top:1.2rem;'>Rebalancing Plan</h3>", unsafe_allow_html=True)
 
-        # Cash card
         cash_diff = cash_target - cash_value
         def _rebal_card(col, label, current, target_val, diff, border_color, subtitle, is_cash=False):
             if abs(diff) <= 1:
                 action, action_col = "✓  OK", "#676c77"
             elif is_cash:
-                action = f"ADD  €{abs(diff):,.0f}" if diff > 0 else f"WITHDRAW  €{abs(diff):,.0f}"
-                action_col = "#34d399" if diff > 0 else "#e5484d"
+                action = f"ADD  €{abs(diff):,.0f}" if diff > 0 else f"SURPLUS  €{abs(diff):,.0f}"
+                action_col = "#34d399" if diff > 0 else "#9ca0ab"
+            elif diff > 0:
+                action, action_col = f"BUY  €{abs(diff):,.0f}", "#34d399"
+            elif allow_selling:
+                action, action_col = f"SELL  €{abs(diff):,.0f}", "#e5484d"
             else:
-                action = f"BUY  €{abs(diff):,.0f}" if diff > 0 else f"SELL  €{abs(diff):,.0f}"
-                action_col = "#34d399" if diff > 0 else "#e5484d"
+                action, action_col = f"PAUSE  (+€{abs(diff):,.0f})", "#f5a524"
+            pct_now = current / investments_value * 100 if (investments_value > 0 and not is_cash) else None
+            now_line = f"Now: <b>€{current:,.0f}</b>" + (f" &nbsp;·&nbsp; {pct_now:.0f}%" if pct_now is not None else "")
             col.markdown(
                 f"<div style='background:#16171e; border:1px solid #262833; border-left:3px solid {border_color}; border-radius:8px; padding:1rem 1.2rem;'>"
                 f"<div style='font-family:Inter; font-size:0.6rem; text-transform:uppercase; letter-spacing:0.12em; color:#676c77; margin-bottom:0.3rem;'>{label}</div>"
-                f"<div style='font-family:Inter; font-size:0.78rem; color:#eef0f4; margin-bottom:0.1rem;'>Now: <b>€{current:,.0f}</b></div>"
+                f"<div style='font-family:Inter; font-size:0.78rem; color:#eef0f4; margin-bottom:0.1rem;'>{now_line}</div>"
                 f"<div style='font-family:Inter; font-size:0.72rem; color:#9ca0ab; margin-bottom:0.45rem;'>Target: €{target_val:,.0f} {subtitle}</div>"
                 f"<div style='font-family:Space Grotesk, sans-serif; font-size:1.3rem; color:{action_col}; letter-spacing:0.03em;'>{action}</div>"
                 f"</div>",
                 unsafe_allow_html=True
             )
 
-        rb1, rb2, rb3 = st.columns(3)
-        _rebal_card(rb1, "Cash & Banks", cash_value, cash_target, cash_diff, "#676c77", "(6 months expenses)", is_cash=True)
+        _cur_split = {'ETF': etf_value, 'Stock': stock_value, 'Crypto': crypto_value}
+        _tgt_split = {'ETF': etf_pct, 'Stock': stocks_pct, 'Crypto': crypto_pct}
+        _colors    = {'ETF': '#34d399', 'Stock': '#60a5fa', 'Crypto': '#818cf8'}
+        _labels    = {'ETF': 'ETFs', 'Stock': 'Stocks', 'Crypto': 'Crypto'}
 
-        etf_target         = investments_value * etf_pct / 100
-        stock_crypto_target = investments_value * stock_crypto_pct / 100
-        etf_diff           = etf_target - etf_value
-        stock_crypto_diff  = stock_crypto_target - (stock_value + crypto_value)
+        rb = st.columns(4)
+        _rebal_card(rb[0], "Cash & Banks", cash_value, cash_target, cash_diff, "#676c77", "(6 months expenses)", is_cash=True)
+        for _i, _c in enumerate(['ETF', 'Stock', 'Crypto'], start=1):
+            _t = investments_value * _tgt_split[_c] / 100
+            _rebal_card(rb[_i], _labels[_c], _cur_split[_c], _t, _t - _cur_split[_c], _colors[_c],
+                        f"({_tgt_split[_c]:.0f}%)")
 
-        _rebal_card(rb2, "ETFs", etf_value, etf_target, etf_diff, "#34d399",
-                    f"({etf_pct:.0f}% of investments)")
-        _rebal_card(rb3, "Stocks + Crypto", stock_value + crypto_value, stock_crypto_target, stock_crypto_diff, "#60a5fa",
-                    f"({stock_crypto_pct:.0f}% of investments)")
+        # ── Next deposit planner (buy-only) ──
+        if abs(_tgt_sum - 100) <= 0.5 and investments_value > 0:
+            st.markdown("<h3 style='margin-top:1.4rem;'>Next deposit</h3>", unsafe_allow_html=True)
+            _need = deposit_needed_without_selling(_cur_split, _tgt_split)
+            if _need == float('inf'):
+                _need_txt = "A category with a 0% target still holds value, so buying alone can't reach target."
+            elif _need <= 1:
+                _need_txt = "You're on target — split new money by the target percentages."
+            else:
+                _need_txt = (f"Without selling, about <b style='color:#eef0f4;'>€{_need:,.0f}</b> of new money "
+                             f"(into the underweight categories) brings everything back to target at today's prices.")
+            st.markdown(f"<p style='font-family:Inter; font-size:0.8rem; color:#9ca0ab;'>{_need_txt}</p>",
+                        unsafe_allow_html=True)
+            _dep = st.number_input("Amount to invest (€)", min_value=0.0, value=500.0, step=50.0,
+                                   format="%.0f", key="next_deposit_amt")
+            _plan = plan_deposit(_cur_split, _tgt_split, _dep)
+            _pc = st.columns(3)
+            for _i, _c in enumerate(['ETF', 'Stock', 'Crypto']):
+                _after = (_cur_split[_c] + _plan[_c]) / (investments_value + _dep) * 100 if (investments_value + _dep) > 0 else 0
+                _pc[_i].markdown(
+                    f"<div style='background:#16171e; border:1px solid #262833; border-left:3px solid {_colors[_c]}; border-radius:8px; padding:0.8rem 1.1rem;'>"
+                    f"<div style='font-family:Inter; font-size:0.6rem; text-transform:uppercase; letter-spacing:0.12em; color:#676c77;'>{_labels[_c]}</div>"
+                    f"<div style='font-family:Space Grotesk, sans-serif; font-size:1.3rem; color:#eef0f4;'>€{_plan[_c]:,.0f}</div>"
+                    f"<div style='font-family:Inter; font-size:0.7rem; color:#9ca0ab;'>→ {_after:.0f}% after (target {_tgt_split[_c]:.0f}%)</div>"
+                    f"</div>", unsafe_allow_html=True)
 
         st.markdown("<div style='height:1rem'></div>", unsafe_allow_html=True)
 
@@ -2565,7 +2728,8 @@ with tab_allocation:
                         '% of Investments': pct_of_inv,
                         'Limit (€)':      limit_val,
                         'Over limit (€)': max(over, 0.0),
-                        'Status':         f"⚠ TRIM €{over:,.0f}" if over > 1 else "✓ OK",
+                        'Status':         ((f"⚠ TRIM €{over:,.0f}" if allow_selling else f"⚠ Over by €{over:,.0f} — pause buying")
+                                           if over > 1 else "✓ OK"),
                     })
             if conc_rows:
                 conc_df = pd.DataFrame(conc_rows)
@@ -3005,7 +3169,7 @@ with tab_planning:
             )
 
             # Annualised portfolio return
-            _ann_pct = calc_annualized_return(profit_percentage, st.session_state.transactions)
+            _ann_pct = _xirr_pct if _xirr_pct is not None else calc_annualized_return(profit_percentage, st.session_state.transactions)
 
             # Accumulate totals across loans (used in the summary below)
             _sum_interest_y = 0.0
