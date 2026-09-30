@@ -7,7 +7,8 @@ import plotly.graph_objects as go
 from datetime import datetime, timedelta, time, date, timezone, tzinfo
 from zoneinfo import ZoneInfo
 from finance_utils import (xirr, investment_cashflows, benchmark_value, plan_deposit,
-                           deposit_needed_without_selling, box3_base, next_peildatum, thresholds_for)
+                           deposit_needed_without_selling, box3_base, next_peildatum, thresholds_for,
+                           diff_cashflow)
 
 st.set_page_config(page_title="Portfolio Tracker", page_icon="", layout="wide")
 
@@ -698,34 +699,32 @@ def save_planning_settings(hourly_rate, goal_amount, target_date, expected_retur
             st.error(f"Error saving planning settings: {e}")
             return False
 
-_TARGET_DEFAULTS = {'etf_pct': 70.0, 'stocks_pct': 10.0, 'crypto_pct': 20.0, 'max_single_pct': 5.0}
+_TARGET_DEFAULTS = {'cash_pct': 20.0, 'etf_pct': 56.0, 'stocks_pct': 8.0, 'crypto_pct': 16.0,
+                    'max_single_pct': 5.0}
+_TARGET_PARTS = ('cash_pct', 'etf_pct', 'stocks_pct', 'crypto_pct')
 
 def load_allocation_targets():
-    """Target split of *investments* (excl. cash): ETF + Stocks + Crypto = 100%."""
+    """Target split of your TOTAL (cash + investments): Cash + ETF + Stocks + Crypto = 100%."""
     default = dict(_TARGET_DEFAULTS)
     try:
         res = supabase.table('allocation_targets').select('*').eq('id', 1).execute()
         if res.data:
             row = res.data[0]
             out = {k: float(row.get(k) if row.get(k) is not None else v) for k, v in default.items()}
-            # Guard against legacy rows where the three parts don't add up to 100
-            if abs(out['etf_pct'] + out['stocks_pct'] + out['crypto_pct'] - 100) > 0.5:
-                out['stocks_pct'] = max(100.0 - out['etf_pct'] - out['crypto_pct'], 0.0)
+            if abs(sum(out[k] for k in _TARGET_PARTS) - 100) > 0.5:
+                # legacy row whose parts don't add up — fall back to defaults for the split
+                out.update({k: default[k] for k in _TARGET_PARTS})
             return out
         supabase.table('allocation_targets').insert({'id': 1, **default}).execute()
         return default
     except Exception:
         return default
 
-def save_allocation_targets(etf_pct, stocks_pct, crypto_pct, max_single_pct):
+def save_allocation_targets(targets: dict):
     try:
-        supabase.table('allocation_targets').upsert({
-            'id': 1,
-            'etf_pct':        float(etf_pct),
-            'stocks_pct':     float(stocks_pct),
-            'crypto_pct':     float(crypto_pct),
-            'max_single_pct': float(max_single_pct),
-        }).execute()
+        supabase.table('allocation_targets').upsert(
+            {'id': 1, **{k: float(targets[k]) for k in _TARGET_DEFAULTS}}
+        ).execute()
         return True
     except Exception as e:
         st.error(f"Error saving allocation targets: {e}")
@@ -1234,64 +1233,6 @@ with st.sidebar.expander("Edit / Delete Transaction", expanded=False):
 # -------------------------
 # Sidebar - Cashflow
 # -------------------------
-with st.sidebar.expander("Cashflow Tracker", expanded=False):
-    st.subheader("Add Cashflow Entry")
-    new_category = st.text_input("Category", key="cashflow_new_category_cf")
-    new_type = st.selectbox("Type", ["Income", "Expense"], key="cashflow_new_type_cf")
-    new_amount = st.number_input("Amount (EUR)", min_value=0.0, step=0.01, key="cashflow_new_amount_cf")
-    new_notes = st.text_input("Notes", key="cashflow_new_notes_cf")
-
-    if st.button("Add Cashflow Entry", key="cashflow_add_button_cf"):
-        if new_category and new_amount > 0:
-            cf_amount = new_amount if new_type == "Income" else -new_amount
-            if add_cashflow_db(new_category, new_type, cf_amount, new_notes):
-                st.session_state.cashflow = load_cashflow()
-                st.success(f"Added new {new_type.lower()} entry for {new_category}.")
-                st.rerun()
-        else:
-            st.warning("Please provide a category and a positive amount.")
-
-    st.markdown("---")
-
-    st.subheader("Edit / Delete Entries")
-    if not st.session_state.cashflow.empty:
-        cf_index = st.selectbox(
-            "Select Entry",
-            options=range(len(st.session_state.cashflow)),
-            format_func=lambda i: f"{st.session_state.cashflow.iloc[i]['Category']} | {st.session_state.cashflow.iloc[i]['Amount']}€",
-            key="cashflow_select_entry_cf"
-        )
-
-        cf_selected = st.session_state.cashflow.iloc[cf_index]
-
-        edit_cat = st.text_input("Category", value=cf_selected["Category"], key="cashflow_edit_category_cf")
-        edit_type = st.selectbox("Type", ["Income", "Expense"], index=0 if cf_selected["Amount"] > 0 else 1, key="cashflow_edit_type_cf")
-        edit_amount = st.number_input("Amount (EUR)", value=abs(float(cf_selected["Amount"])), step=0.01, key="cashflow_edit_amount_cf")
-        edit_notes = st.text_input("Notes", value=str(cf_selected.get("Notes", "") or ""), key="cashflow_edit_notes_cf")
-
-        colA, colB = st.columns(2)
-        with colA:
-            update_cf = st.button("Update Cashflow", key="cashflow_update_button_cf")
-        with colB:
-            delete_cf = st.button("Delete Cashflow", key="cashflow_delete_button_cf")
-
-        if update_cf:
-            cf_id = st.session_state.cashflow.iloc[cf_index]['id']
-            cf_amount = edit_amount if edit_type == "Income" else -edit_amount
-            if update_cashflow_db(cf_id, edit_cat, edit_type, cf_amount, edit_notes):
-                st.session_state.cashflow = load_cashflow()
-                st.success("Entry updated.")
-                st.rerun()
-
-        if delete_cf:
-            cf_id = st.session_state.cashflow.iloc[cf_index]['id']
-            if delete_cashflow_db(cf_id):
-                st.session_state.cashflow = load_cashflow()
-                st.success("Entry deleted.")
-                st.rerun()
-    else:
-        st.info("No entries yet. Add one above.")
-
 # ─── Loans sidebar ───
 with st.sidebar.expander("Loans / Debt", expanded=False):
     st.subheader("Add a Loan")
@@ -2000,69 +1941,80 @@ tab_overview, tab_history, tab_cashflow, tab_allocation, tab_charts, tab_plannin
 with tab_cashflow:
     st.markdown("<h2><span class='material-symbols-outlined' style='font-size:20px;'>account_balance_wallet</span> Cashflow</h2>", unsafe_allow_html=True)
 
-    if not st.session_state.cashflow.empty:
-        income_df = st.session_state.cashflow[st.session_state.cashflow["Amount"] > 0].sort_values(by="Amount", ascending=False)
-        expense_df = st.session_state.cashflow[st.session_state.cashflow["Amount"] < 0].sort_values(by="Amount", ascending=True)
+    _cf = st.session_state.cashflow.copy()
+    if _cf.empty:
+        _cf = pd.DataFrame(columns=['id'] + CF_DISPLAY_COLS)
 
-        total_income = income_df["Amount"].sum()
-        total_expenses = expense_df["Amount"].sum()
-        net_cashflow = total_income + total_expenses
-        _net_col = "#34d399" if net_cashflow >= 0 else "#e5484d"
-        st.markdown(f"""
-        <div style='display:flex; gap:1.5rem; flex-wrap:wrap; margin-bottom:1.5rem;'>
-            <div style='flex:1; min-width:160px; background:#16171e; border:1px solid #262833; border-left:3px solid #34d399; border-radius:8px; padding:1rem 1.2rem;'>
-                <div style='font-family:"Inter",sans-serif; font-size:0.6rem; letter-spacing:0.12em; text-transform:uppercase; color:#676c77; margin-bottom:0.3rem;'>Total Income</div>
-                <div style='font-family:"Space Grotesk",sans-serif; font-size:1.4rem; color:#34d399; letter-spacing:0.03em;'>€{total_income:,.2f}</div>
-            </div>
-            <div style='flex:1; min-width:160px; background:#16171e; border:1px solid #262833; border-left:3px solid #e5484d; border-radius:8px; padding:1rem 1.2rem;'>
-                <div style='font-family:"Inter",sans-serif; font-size:0.6rem; letter-spacing:0.12em; text-transform:uppercase; color:#676c77; margin-bottom:0.3rem;'>Total Expenses</div>
-                <div style='font-family:"Space Grotesk",sans-serif; font-size:1.4rem; color:#e5484d; letter-spacing:0.03em;'>€{abs(total_expenses):,.2f}</div>
-            </div>
-            <div style='flex:1; min-width:160px; background:#16171e; border:1px solid #262833; border-left:3px solid #818cf8; border-radius:8px; padding:1rem 1.2rem;'>
-                <div style='font-family:"Inter",sans-serif; font-size:0.6rem; letter-spacing:0.12em; text-transform:uppercase; color:#676c77; margin-bottom:0.3rem;'>Net Monthly</div>
-                <div style='font-family:"Space Grotesk",sans-serif; font-size:1.4rem; color:{_net_col}; letter-spacing:0.03em;'>€{net_cashflow:,.2f}</div>
-            </div>
-        </div>
-        """, unsafe_allow_html=True)
+    # ── Summary ──
+    total_income   = float(_cf.loc[_cf['Amount'] > 0, 'Amount'].sum()) if not _cf.empty else 0.0
+    total_expenses = float(-_cf.loc[_cf['Amount'] < 0, 'Amount'].sum()) if not _cf.empty else 0.0
+    net_cashflow   = total_income - total_expenses
+    _net_col = "#34d399" if net_cashflow >= 0 else "#e5484d"
+    _sc = st.columns(3)
+    _sc[0].markdown(_card("Income / month",
+        f"<div style='font-family:Space Grotesk; font-size:1.4rem; color:#34d399;'>€{total_income:,.2f}</div>", "#34d399"),
+        unsafe_allow_html=True)
+    _sc[1].markdown(_card("Expenses / month",
+        f"<div style='font-family:Space Grotesk; font-size:1.4rem; color:#e5484d;'>€{total_expenses:,.2f}</div>", "#e5484d"),
+        unsafe_allow_html=True)
+    _sc[2].markdown(_card("Left over / month",
+        f"<div style='font-family:Space Grotesk; font-size:1.4rem; color:{_net_col};'>{'−' if net_cashflow < 0 else ''}€{abs(net_cashflow):,.2f}</div>", "#818cf8"),
+        unsafe_allow_html=True)
 
-        st.markdown("---")
+    st.markdown("<div style='height:1rem;'></div>", unsafe_allow_html=True)
+    st.markdown(
+        "<p style='font-family:Inter; font-size:0.8rem; color:#9ca0ab;'>"
+        "Edit directly in the table: click a cell to change it, use the <b>+</b> row at the bottom to add, "
+        "select a row and press <b>Delete</b> (or the bin icon) to remove. Amounts are per month, always positive "
+        "— the Type decides income or expense. Nothing is saved until you press <b>Save changes</b>.</p>",
+        unsafe_allow_html=True)
 
-        col1, col2 = st.columns(2)
+    _view = _cf[['id'] + CF_DISPLAY_COLS].copy()
+    _view['Amount'] = _view['Amount'].abs()
+    _view['Notes'] = _view['Notes'].fillna('')
+    _view = _view.sort_values(['Type', 'Amount'], ascending=[False, False]).reset_index(drop=True)
 
-        with col1:
-            st.markdown("### Income")
-            if not income_df.empty:
-                st.dataframe(
-                    income_df[CF_DISPLAY_COLS]
-                    .style.format({"Amount": "€{:.2f}"})
-                    .set_properties(**{"text-align": "left"})
-                    .set_table_styles(
-                        [{"selector": "thead th", "props": [("background-color", "#16171e"), ("color", "#9ca0ab"), ("border-bottom", "1px solid #262833")]}]
-                    ),
-                    use_container_width=True
-                )
-            else:
-                st.info("No income entries yet.")
+    _edited = st.data_editor(
+        _view,
+        key=f"cashflow_editor_{st.session_state.get('cf_editor_ver', 0)}",
+        num_rows="dynamic",
+        hide_index=True,
+        use_container_width=True,
+        column_order=['Type', 'Category', 'Amount', 'Notes'],
+        column_config={
+            'id': None,
+            'Type': st.column_config.SelectboxColumn("Type", options=['Income', 'Expense'],
+                                                     required=True, default='Expense', width="small"),
+            'Category': st.column_config.TextColumn("Name", required=True, help="e.g. Huur, Boodschappen, DUO"),
+            'Amount': st.column_config.NumberColumn("€ / month", min_value=0.0, step=0.01, format="€%.2f",
+                                                    required=True),
+            'Notes': st.column_config.TextColumn("Notes"),
+        },
+    )
 
-        with col2:
-            st.markdown("### Expenses")
-            if not expense_df.empty:
-                expense_display = expense_df[CF_DISPLAY_COLS].copy()
-                expense_display["Amount"] = expense_display["Amount"].abs()
-                st.dataframe(
-                    expense_display
-                    .style.format({"Amount": "€{:.2f}"})
-                    .set_properties(**{"text-align": "left"})
-                    .set_table_styles(
-                        [{"selector": "thead th", "props": [("background-color", "#16171e"), ("color", "#9ca0ab"), ("border-bottom", "1px solid #262833")]}]
-                    ),
-                    use_container_width=True
-                )
-            else:
-                st.info("No expenses yet.")
-
-    else:
-        st.info("No cashflow data available yet.")
+    _ins, _upd, _dels, _errs = diff_cashflow(_view, _edited)
+    _n_changes = len(_ins) + len(_upd) + len(_dels)
+    for _e in _errs:
+        st.warning(_e)
+    _bc1, _bc2 = st.columns([1, 4])
+    with _bc1:
+        _save = st.button(f"Save changes ({_n_changes})" if _n_changes else "Save changes",
+                          key="cashflow_save", disabled=_n_changes == 0, type="primary")
+    with _bc2:
+        if _n_changes:
+            st.markdown(
+                f"<p style='font-family:Inter; font-size:0.75rem; color:#f5a524; padding-top:0.55rem;'>"
+                f"Unsaved: {len(_ins)} new · {len(_upd)} changed · {len(_dels)} deleted</p>",
+                unsafe_allow_html=True)
+    if _save:
+        _ok = all(add_cashflow_db(r['category'], r['type'], r['amount'], r['notes']) for r in _ins)
+        _ok &= all(update_cashflow_db(i, r['category'], r['type'], r['amount'], r['notes']) for i, r in _upd)
+        _ok &= all(delete_cashflow_db(i) for i in _dels)
+        st.session_state.cashflow = load_cashflow()
+        st.session_state.cf_editor_ver = st.session_state.get('cf_editor_ver', 0) + 1  # fresh table
+        if _ok:
+            st.toast("Cashflow saved ✓")
+        st.rerun()
 
 # -------------------------
 # Tab: Historical Portfolio Value
@@ -2593,45 +2545,52 @@ with tab_allocation:
 
         tgt = st.session_state.allocation_targets
 
-        # Monthly expenses from cashflow
+        # Monthly expenses from cashflow (for the emergency-buffer hint)
         monthly_expenses = 0.0
         if not st.session_state.cashflow.empty:
             monthly_expenses = abs(float(
                 st.session_state.cashflow.loc[st.session_state.cashflow['Amount'] < 0, 'Amount'].sum()
             ))
-        cash_target = monthly_expenses * 6
+        buffer_6m = monthly_expenses * 6
 
-        st.markdown(
-            f"<p style='font-family:Inter; font-size:0.8rem; color:#9ca0ab; margin-bottom:0.25rem;'>"
-            f"💰 Monthly expenses (from Cashflow): <b style='color:#eef0f4;'>€{monthly_expenses:,.2f}</b> "
-            f"→ Cash safety target (×6): <b style='color:#818cf8;'>€{cash_target:,.2f}</b></p>",
-            unsafe_allow_html=True
-        )
+        st.markdown("<p style='font-family:Inter; font-size:0.78rem; color:#9ca0ab; margin-bottom:0.75rem;'>"
+                    "Target split of your <b style='color:#eef0f4;'>total</b> (cash + investments). "
+                    "The four must add up to 100%.</p>", unsafe_allow_html=True)
 
-        st.markdown("<p style='font-family:Inter; font-size:0.75rem; color:#676c77; margin-bottom:0.75rem;'>Target split of your investments (excl. cash). The three must add up to 100%.</p>", unsafe_allow_html=True)
+        _keys   = ['Cash', 'ETF', 'Stock', 'Crypto']
+        _tkeys  = {'Cash': 'cash_pct', 'ETF': 'etf_pct', 'Stock': 'stocks_pct', 'Crypto': 'crypto_pct'}
+        _labels = {'Cash': 'Cash & Banks', 'ETF': 'ETFs', 'Stock': 'Stocks', 'Crypto': 'Crypto'}
+        _colors = {'Cash': '#676c77', 'ETF': '#34d399', 'Stock': '#60a5fa', 'Crypto': '#818cf8'}
 
-        tc1, tc2, tc3, tc4 = st.columns(4)
-        with tc1:
-            etf_pct = st.number_input("ETF %", min_value=0.0, max_value=100.0,
-                value=float(tgt.get('etf_pct', 70.0)), step=1.0, format="%.0f", key="tgt_etf_pct")
-        with tc2:
-            stocks_pct = st.number_input("Stocks %", min_value=0.0, max_value=100.0,
-                value=float(tgt.get('stocks_pct', 10.0)), step=1.0, format="%.0f", key="tgt_stocks_pct")
-        with tc3:
-            crypto_pct = st.number_input("Crypto %", min_value=0.0, max_value=100.0,
-                value=float(tgt.get('crypto_pct', 20.0)), step=1.0, format="%.0f", key="tgt_crypto_pct")
-        with tc4:
+        tcols = st.columns(5)
+        _tgt_split = {}
+        for _col, _k in zip(tcols, _keys):
+            with _col:
+                _tgt_split[_k] = st.number_input(f"{_labels[_k]} %", min_value=0.0, max_value=100.0,
+                    value=float(tgt.get(_tkeys[_k], _TARGET_DEFAULTS[_tkeys[_k]])), step=1.0, format="%.0f",
+                    key=f"tgt_{_tkeys[_k]}")
+        with tcols[4]:
             max_single_pct = st.number_input("Max % per stock / crypto", min_value=0.5, max_value=50.0,
                 value=float(tgt.get('max_single_pct', 5.0)), step=0.5, format="%.1f", key="tgt_max_single",
-                help="No individual stock or crypto should exceed this % of total investments")
+                help="No individual stock or crypto should exceed this % of your investments (excl. cash)")
 
-        _tgt_sum = etf_pct + stocks_pct + crypto_pct
+        _tgt_sum = sum(_tgt_split.values())
+        _cash_tgt_eur = total_value * _tgt_split['Cash'] / 100
+        _hint = (f"Your cash target is <b style='color:#eef0f4;'>€{_cash_tgt_eur:,.0f}</b> "
+                 f"= {(_cash_tgt_eur / monthly_expenses if monthly_expenses else 0):.1f} months of expenses "
+                 f"(€{monthly_expenses:,.0f}/month from Cashflow).")
+        if monthly_expenses and _cash_tgt_eur < buffer_6m:
+            _hint += (f" <span style='color:#f5a524;'>That's below a 6-month buffer (€{buffer_6m:,.0f}).</span>")
+        st.markdown(f"<p style='font-family:Inter; font-size:0.78rem; color:#9ca0ab;'>{_hint}</p>",
+                    unsafe_allow_html=True)
+
         if abs(_tgt_sum - 100) > 0.5:
-            st.warning(f"ETF + Stocks + Crypto = {_tgt_sum:.0f}%. Make them add up to 100% before saving.")
+            st.warning(f"Cash + ETF + Stocks + Crypto = {_tgt_sum:.0f}%. Make them add up to 100% before saving.")
         elif st.button("Save Targets", key="save_targets_btn"):
-            if save_allocation_targets(etf_pct, stocks_pct, crypto_pct, max_single_pct):
-                st.session_state.allocation_targets = {'etf_pct': etf_pct, 'stocks_pct': stocks_pct,
-                                                       'crypto_pct': crypto_pct, 'max_single_pct': max_single_pct}
+            _new_t = {_tkeys[k]: v for k, v in _tgt_split.items()}
+            _new_t['max_single_pct'] = max_single_pct
+            if save_allocation_targets(_new_t):
+                st.session_state.allocation_targets = _new_t
                 st.success("Targets saved!")
 
         allow_selling = st.toggle("Allow selling to rebalance", value=False, key="allow_selling",
@@ -2640,49 +2599,42 @@ with tab_allocation:
         # ── Rebalancing Plan ──
         st.markdown("<h3 style='margin-top:1.2rem;'>Rebalancing Plan</h3>", unsafe_allow_html=True)
 
-        cash_diff = cash_target - cash_value
-        def _rebal_card(col, label, current, target_val, diff, border_color, subtitle, is_cash=False):
+        def _rebal_card(col, key, current, target_val, diff, subtitle):
+            is_cash = key == 'Cash'
             if abs(diff) <= 1:
                 action, action_col = "✓  OK", "#676c77"
-            elif is_cash:
-                action = f"ADD  €{abs(diff):,.0f}" if diff > 0 else f"SURPLUS  €{abs(diff):,.0f}"
-                action_col = "#34d399" if diff > 0 else "#9ca0ab"
             elif diff > 0:
-                action, action_col = f"BUY  €{abs(diff):,.0f}", "#34d399"
+                action = f"ADD  €{diff:,.0f}" if is_cash else f"BUY  €{diff:,.0f}"
+                action_col = "#34d399"
+            elif is_cash:
+                action, action_col = f"SURPLUS  €{-diff:,.0f}", "#9ca0ab"
             elif allow_selling:
-                action, action_col = f"SELL  €{abs(diff):,.0f}", "#e5484d"
+                action, action_col = f"SELL  €{-diff:,.0f}", "#e5484d"
             else:
-                action, action_col = f"PAUSE  (+€{abs(diff):,.0f})", "#f5a524"
-            pct_now = current / investments_value * 100 if (investments_value > 0 and not is_cash) else None
-            now_line = f"Now: <b>€{current:,.0f}</b>" + (f" &nbsp;·&nbsp; {pct_now:.0f}%" if pct_now is not None else "")
+                action, action_col = f"PAUSE  (+€{-diff:,.0f})", "#f5a524"
+            pct_now = current / total_value * 100 if total_value > 0 else 0
             col.markdown(
-                f"<div style='background:#16171e; border:1px solid #262833; border-left:3px solid {border_color}; border-radius:8px; padding:1rem 1.2rem;'>"
-                f"<div style='font-family:Inter; font-size:0.6rem; text-transform:uppercase; letter-spacing:0.12em; color:#676c77; margin-bottom:0.3rem;'>{label}</div>"
-                f"<div style='font-family:Inter; font-size:0.78rem; color:#eef0f4; margin-bottom:0.1rem;'>{now_line}</div>"
+                f"<div style='background:#16171e; border:1px solid #262833; border-left:3px solid {_colors[key]}; border-radius:8px; padding:1rem 1.2rem;'>"
+                f"<div style='font-family:Inter; font-size:0.6rem; text-transform:uppercase; letter-spacing:0.12em; color:#676c77; margin-bottom:0.3rem;'>{_labels[key]}</div>"
+                f"<div style='font-family:Inter; font-size:0.78rem; color:#eef0f4; margin-bottom:0.1rem;'>Now: <b>€{current:,.0f}</b> &nbsp;·&nbsp; {pct_now:.0f}%</div>"
                 f"<div style='font-family:Inter; font-size:0.72rem; color:#9ca0ab; margin-bottom:0.45rem;'>Target: €{target_val:,.0f} {subtitle}</div>"
                 f"<div style='font-family:Space Grotesk, sans-serif; font-size:1.3rem; color:{action_col}; letter-spacing:0.03em;'>{action}</div>"
                 f"</div>",
                 unsafe_allow_html=True
             )
 
-        _cur_split = {'ETF': etf_value, 'Stock': stock_value, 'Crypto': crypto_value}
-        _tgt_split = {'ETF': etf_pct, 'Stock': stocks_pct, 'Crypto': crypto_pct}
-        _colors    = {'ETF': '#34d399', 'Stock': '#60a5fa', 'Crypto': '#818cf8'}
-        _labels    = {'ETF': 'ETFs', 'Stock': 'Stocks', 'Crypto': 'Crypto'}
-
+        _cur_split = {'Cash': cash_value, 'ETF': etf_value, 'Stock': stock_value, 'Crypto': crypto_value}
         rb = st.columns(4)
-        _rebal_card(rb[0], "Cash & Banks", cash_value, cash_target, cash_diff, "#676c77", "(6 months expenses)", is_cash=True)
-        for _i, _c in enumerate(['ETF', 'Stock', 'Crypto'], start=1):
-            _t = investments_value * _tgt_split[_c] / 100
-            _rebal_card(rb[_i], _labels[_c], _cur_split[_c], _t, _t - _cur_split[_c], _colors[_c],
-                        f"({_tgt_split[_c]:.0f}%)")
+        for _i, _k in enumerate(_keys):
+            _t = total_value * _tgt_split[_k] / 100
+            _rebal_card(rb[_i], _k, _cur_split[_k], _t, _t - _cur_split[_k], f"({_tgt_split[_k]:.0f}%)")
 
         # ── Next deposit planner (buy-only) ──
-        if abs(_tgt_sum - 100) <= 0.5 and investments_value > 0:
+        if abs(_tgt_sum - 100) <= 0.5 and total_value > 0:
             st.markdown("<h3 style='margin-top:1.4rem;'>Next deposit</h3>", unsafe_allow_html=True)
             _need = deposit_needed_without_selling(_cur_split, _tgt_split)
             if _need == float('inf'):
-                _need_txt = "A category with a 0% target still holds value, so buying alone can't reach target."
+                _need_txt = "A category with a 0% target still holds value, so adding money alone can't reach target."
             elif _need <= 1:
                 _need_txt = "You're on target — split new money by the target percentages."
             else:
@@ -2690,17 +2642,18 @@ with tab_allocation:
                              f"(into the underweight categories) brings everything back to target at today's prices.")
             st.markdown(f"<p style='font-family:Inter; font-size:0.8rem; color:#9ca0ab;'>{_need_txt}</p>",
                         unsafe_allow_html=True)
-            _dep = st.number_input("Amount to invest (€)", min_value=0.0, value=500.0, step=50.0,
+            _dep = st.number_input("New money this month (€)", min_value=0.0, value=500.0, step=50.0,
                                    format="%.0f", key="next_deposit_amt")
             _plan = plan_deposit(_cur_split, _tgt_split, _dep)
-            _pc = st.columns(3)
-            for _i, _c in enumerate(['ETF', 'Stock', 'Crypto']):
-                _after = (_cur_split[_c] + _plan[_c]) / (investments_value + _dep) * 100 if (investments_value + _dep) > 0 else 0
+            _pc = st.columns(4)
+            for _i, _k in enumerate(_keys):
+                _after = (_cur_split[_k] + _plan[_k]) / (total_value + _dep) * 100 if (total_value + _dep) > 0 else 0
+                _verb = "Keep as cash" if _k == 'Cash' else "Invest"
                 _pc[_i].markdown(
-                    f"<div style='background:#16171e; border:1px solid #262833; border-left:3px solid {_colors[_c]}; border-radius:8px; padding:0.8rem 1.1rem;'>"
-                    f"<div style='font-family:Inter; font-size:0.6rem; text-transform:uppercase; letter-spacing:0.12em; color:#676c77;'>{_labels[_c]}</div>"
-                    f"<div style='font-family:Space Grotesk, sans-serif; font-size:1.3rem; color:#eef0f4;'>€{_plan[_c]:,.0f}</div>"
-                    f"<div style='font-family:Inter; font-size:0.7rem; color:#9ca0ab;'>→ {_after:.0f}% after (target {_tgt_split[_c]:.0f}%)</div>"
+                    f"<div style='background:#16171e; border:1px solid #262833; border-left:3px solid {_colors[_k]}; border-radius:8px; padding:0.8rem 1.1rem;'>"
+                    f"<div style='font-family:Inter; font-size:0.6rem; text-transform:uppercase; letter-spacing:0.12em; color:#676c77;'>{_labels[_k]} · {_verb}</div>"
+                    f"<div style='font-family:Space Grotesk, sans-serif; font-size:1.3rem; color:#eef0f4;'>€{_plan[_k]:,.0f}</div>"
+                    f"<div style='font-family:Inter; font-size:0.7rem; color:#9ca0ab;'>→ {_after:.0f}% after (target {_tgt_split[_k]:.0f}%)</div>"
                     f"</div>", unsafe_allow_html=True)
 
         st.markdown("<div style='height:1rem'></div>", unsafe_allow_html=True)

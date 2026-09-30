@@ -192,3 +192,60 @@ def box3_base(assets: float, debts: float, debt_threshold: float) -> float:
     This is also the 'vermogen' used for the toeslagen asset limits."""
     deductible = max(float(debts) - float(debt_threshold), 0.0)
     return max(float(assets) - deductible, 0.0)
+
+
+# ─────────────────────────────────────────────────────────────
+# Cashflow table editing: turn an edited table into DB operations
+# ─────────────────────────────────────────────────────────────
+
+def diff_cashflow(original: pd.DataFrame, edited: pd.DataFrame):
+    """Compare the table as loaded with the table as edited by the user.
+
+    Both frames have columns id, Category, Type, Amount, Notes, where Amount is
+    shown as a POSITIVE number and Type decides the sign.
+    Returns (inserts, updates, deletes, errors):
+      inserts: list of dicts (category, type, amount, notes) — amount signed
+      updates: list of (id, dict)
+      deletes: list of ids
+      errors:  list of human-readable problems (rows are skipped, not saved)
+    """
+    def _clean(row):
+        cat = str(row.get('Category') or '').strip()
+        typ = row.get('Type') if row.get('Type') in ('Income', 'Expense') else None
+        try:
+            amt = abs(float(row.get('Amount')))
+        except (TypeError, ValueError):
+            amt = float('nan')
+        notes = row.get('Notes')
+        notes = '' if notes is None or (isinstance(notes, float) and pd.isna(notes)) else str(notes)
+        return cat, typ, amt, notes
+
+    inserts, updates, deletes, errors = [], [], [], []
+    orig_by_id = {}
+    for _, r in original.iterrows():
+        if pd.notna(r.get('id')):
+            orig_by_id[int(r['id'])] = _clean(r)
+
+    seen = set()
+    for i, r in edited.reset_index(drop=True).iterrows():
+        cat, typ, amt, notes = _clean(r)
+        rid = r.get('id')
+        is_new = rid is None or (isinstance(rid, float) and pd.isna(rid)) or pd.isna(rid)
+        if not cat and (pd.isna(amt) or amt == 0) and is_new:
+            continue  # empty new row — ignore
+        if not cat or typ is None or pd.isna(amt) or amt <= 0:
+            errors.append(f"Row {i + 1}: needs a name, a type and an amount above 0.")
+            if not is_new:
+                seen.add(int(rid))  # don't delete an existing row just because it's invalid
+            continue
+        signed = amt if typ == 'Income' else -amt
+        payload = {'category': cat, 'type': typ, 'amount': signed, 'notes': notes}
+        if is_new:
+            inserts.append(payload)
+        else:
+            rid = int(rid)
+            seen.add(rid)
+            if orig_by_id.get(rid) != (cat, typ, amt, notes):
+                updates.append((rid, payload))
+    deletes = [rid for rid in orig_by_id if rid not in seen]
+    return inserts, updates, deletes, errors

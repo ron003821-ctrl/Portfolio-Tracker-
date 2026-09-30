@@ -58,3 +58,28 @@ def test_box3_and_dates():
     assert next_peildatum(date(2026, 9, 30)) == date(2027, 1, 1)
     assert next_peildatum(date(2027, 1, 1)) == date(2027, 1, 1)
     assert thresholds_for(2027)[0] == 2026 and thresholds_for(2026)[0] == 2026
+
+def test_diff_cashflow():
+    from finance_utils import diff_cashflow
+    orig = pd.DataFrame([
+        dict(id=1, Category='huur', Type='Expense', Amount=500.0, Notes=''),
+        dict(id=2, Category='DUO', Type='Income', Amount=545.8, Notes=''),
+        dict(id=3, Category='gym', Type='Expense', Amount=30.0, Notes=''),
+    ])
+    edited = pd.DataFrame([
+        dict(id=1, Category='huur', Type='Expense', Amount=520.0, Notes=''),      # update
+        dict(id=2, Category='DUO', Type='Income', Amount=545.8, Notes=''),        # unchanged
+        dict(id=None, Category='spotify', Type='Expense', Amount=11.0, Notes=''), # insert
+        dict(id=None, Category='', Type=None, Amount=None, Notes=None),           # blank row
+    ])                                                                            # id 3 deleted
+    ins, upd, dels, errs = diff_cashflow(orig, edited)
+    assert ins == [{'category': 'spotify', 'type': 'Expense', 'amount': -11.0, 'notes': ''}]
+    assert upd == [(1, {'category': 'huur', 'type': 'Expense', 'amount': -520.0, 'notes': ''})]
+    assert dels == [3] and errs == []
+
+def test_diff_cashflow_invalid_row_not_deleted():
+    from finance_utils import diff_cashflow
+    orig = pd.DataFrame([dict(id=1, Category='huur', Type='Expense', Amount=500.0, Notes='')])
+    edited = pd.DataFrame([dict(id=1, Category='', Type='Expense', Amount=500.0, Notes='')])
+    ins, upd, dels, errs = diff_cashflow(orig, edited)
+    assert not ins and not upd and not dels and len(errs) == 1
