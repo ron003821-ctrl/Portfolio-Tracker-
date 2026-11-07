@@ -83,3 +83,37 @@ def test_diff_cashflow_invalid_row_not_deleted():
     edited = pd.DataFrame([dict(id=1, Category='', Type='Expense', Amount=500.0, Notes='')])
     ins, upd, dels, errs = diff_cashflow(orig, edited)
     assert not ins and not upd and not dels and len(errs) == 1
+
+
+# ── Daily recap ──
+from finance_utils import change_from_closes, daily_moves
+
+def test_change_from_closes_uses_last_two_prices():
+    s = pd.Series([100.0, 110.0, 99.0],
+                  index=pd.to_datetime(['2026-11-04', '2026-11-05', '2026-11-06']))
+    pct, d = change_from_closes(s)
+    assert abs(pct - (-0.1)) < 1e-12
+    assert d == date(2026, 11, 6)
+
+def test_change_from_closes_skips_gaps_and_needs_two_prices():
+    s = pd.Series([50.0, float('nan'), 55.0], index=[date(2026, 11, 3), date(2026, 11, 4), date(2026, 11, 5)])
+    pct, d = change_from_closes(s)
+    assert abs(pct - 0.1) < 1e-12 and d == date(2026, 11, 5)
+    assert change_from_closes(pd.Series([42.0])) == (None, None)
+    assert change_from_closes(pd.Series(dtype=float)) == (None, None)
+
+def test_daily_moves_euros_totals_and_order():
+    holdings = pd.DataFrame({'Ticker': ['VWCE', 'BTC', 'ASML', 'NEW'],
+                             'Value': [1100.0, 450.0, 500.0, 200.0]})
+    # VWCE +10% → was 1000, moved +100;  BTC −10% → was 500, moved −50;  ASML flat;  NEW unknown
+    table, total, pct = daily_moves(holdings, {'VWCE': 0.10, 'BTC': -0.10, 'ASML': 0.0, 'NEW': None})
+    assert list(table['Ticker']) == ['VWCE', 'BTC', 'ASML', 'NEW']
+    assert abs(table.loc[0, 'Move'] - 100) < 1e-9
+    assert abs(table.loc[1, 'Move'] - (-50)) < 1e-9
+    assert math.isnan(table.loc[3, 'Move'])
+    assert abs(total - 50) < 1e-9
+    assert abs(pct - 50 / 2000) < 1e-12      # yesterday's value of known positions: 1000+500+500
+
+def test_daily_moves_nothing_known():
+    table, total, pct = daily_moves(pd.DataFrame({'Ticker': ['X'], 'Value': [10.0]}), {})
+    assert total == 0 and pct is None and len(table) == 1

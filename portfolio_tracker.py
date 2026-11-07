@@ -8,7 +8,8 @@ from datetime import datetime, timedelta, time, date, timezone, tzinfo
 from zoneinfo import ZoneInfo
 from finance_utils import (xirr, investment_cashflows, benchmark_value, plan_deposit,
                            deposit_needed_without_selling, box3_base, next_peildatum, thresholds_for,
-                           diff_cashflow)
+                           diff_cashflow, change_from_closes, daily_moves)
+from daily_recap import render_daily_recap
 
 st.set_page_config(page_title="Portfolio Tracker", page_icon="", layout="wide")
 
@@ -1561,6 +1562,87 @@ def get_historical_data(ticker, period='1y'):
 
     return pd.DataFrame()
 
+
+@st.cache_data(ttl=300)
+def _kraken_recent_closes(pair: str) -> pd.Series:
+    """Last few daily candles from Kraken (00:00 UTC). The last one is today's, still moving."""
+    try:
+        import requests, time as _time
+        r = requests.get(
+            f"https://api.kraken.com/0/public/OHLC?pair={pair}&interval=1440"
+            f"&since={int(_time.time()) - 5 * 86400}",
+            timeout=10
+        )
+        if r.status_code == 200 and not r.json().get('error'):
+            result = r.json().get('result', {})
+            ohlc = next((v for k, v in result.items() if k != 'last'), [])
+            if ohlc:
+                return pd.Series([float(c[4]) for c in ohlc],
+                                 index=pd.to_datetime([c[0] for c in ohlc], unit='s'))
+    except Exception:
+        pass
+    return pd.Series(dtype=float)
+
+
+@st.cache_data(ttl=300)
+def get_daily_change(ticker):
+    """Price change since the previous close, as (fraction, date of the latest price).
+
+    Crypto: today (UTC) vs. yesterday's 00:00 UTC close. Stocks/ETFs: latest trading
+    day vs. the one before (on weekends that is Friday vs. Thursday). Both prices come
+    from the same source and currency, so the % is not affected by EUR conversion.
+    Returns (None, None) if no history is found.
+    """
+    if ticker in KRAKEN_PAIRS:
+        pct, d = change_from_closes(_kraken_recent_closes(KRAKEN_PAIRS[ticker]))
+        if pct is not None:
+            return pct, d
+
+    tickers_to_try = [ticker]
+    if ticker in ['VUSA', 'VUSA.AS']:
+        tickers_to_try.extend(['VUSA.AS', 'VOO'])
+    elif ticker in ['VWRL', 'VWRL.AS']:
+        tickers_to_try.append('VWRL.AS')
+    elif ticker in ['QDVE', 'QDVE.DE']:
+        tickers_to_try.append('QDVE.DE')
+    elif ticker in ['BTC', 'ETH', 'SOL', 'TAO']:
+        tickers_to_try.extend([f"{ticker}-EUR", f"{ticker}-USD"])
+    elif '-EUR' in ticker:
+        tickers_to_try.append(ticker.replace('-EUR', '-USD'))
+    if ticker.endswith('.DE'):
+        tickers_to_try.append(ticker[:-3] + '.F')
+    elif ticker.endswith('.F'):
+        tickers_to_try.append(ticker[:-2] + '.DE')
+    if ticker in _EU_FALLBACK:
+        tickers_to_try.append(_EU_FALLBACK[ticker])
+
+    for t in tickers_to_try:
+        try:
+            closes = yf.Ticker(t).history(period='7d', interval='1d')['Close']
+            pct, d = change_from_closes(closes)
+            if pct is not None:
+                return pct, d
+        except Exception:
+            continue
+    return None, None
+
+
+def render_daily_recap_section(portfolio_df: pd.DataFrame):
+    """'Since the last close' card at the top of the Dashboard."""
+    if portfolio_df.empty:
+        return
+    changes, stock_dates, has_crypto = {}, [], False
+    for t in portfolio_df['Ticker']:
+        pct, d = get_daily_change(t)
+        changes[t] = pct
+        if get_category(t) == 'Crypto':
+            has_crypto = has_crypto or pct is not None
+        elif d is not None:
+            stock_dates.append(d)
+    table, total_move, total_change = daily_moves(portfolio_df[['Ticker', 'Value']], changes)
+    stock_date = max(set(stock_dates), key=stock_dates.count) if stock_dates else None
+    render_daily_recap(table, total_move, total_change, stock_date, has_crypto, _today_local)
+
 # -------------------------
 # Add / Edit / Delete transactions
 # -------------------------
@@ -2142,6 +2224,9 @@ with tab_history:
 # -------------------------
 with tab_overview:
     st.markdown("<h2><span class='material-symbols-outlined' style='font-size:20px;'>dashboard</span> Dashboard</h2>", unsafe_allow_html=True)
+
+    render_daily_recap_section(portfolio_df)
+    st.markdown("<div style='height:0.8rem;'></div>", unsafe_allow_html=True)
 
     render_year_start_check()
     render_returns_row()

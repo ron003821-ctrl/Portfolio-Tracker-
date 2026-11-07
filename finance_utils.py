@@ -3,6 +3,7 @@
 - xirr / investment_cashflows / benchmark_*   money-weighted return + same-cash-flow benchmark
 - plan_deposit / deposit_needed_without_selling   rebalancing with new money only
 - box3_base / next_peildatum / thresholds_for     1 January check (toeslagen, Box 3)
+- change_from_closes / daily_moves                daily recap: price move since the previous close
 """
 from __future__ import annotations
 
@@ -249,3 +250,54 @@ def diff_cashflow(original: pd.DataFrame, edited: pd.DataFrame):
                 updates.append((rid, payload))
     deletes = [rid for rid in orig_by_id if rid not in seen]
     return inserts, updates, deletes, errors
+
+
+# ─────────────────────────────────────────────────────────────
+# Daily recap: price move of each position since its previous close
+# ─────────────────────────────────────────────────────────────
+
+def change_from_closes(closes: pd.Series) -> tuple[float | None, date | None]:
+    """Fractional change of the latest close vs. the one before it (0.012 = +1.2%).
+
+    `closes` is indexed by date (or datetime) in ascending order; the last entry may be
+    today's still-moving price. Returns (change, date of the latest price), or
+    (None, None) when there are fewer than two usable prices.
+    """
+    s = pd.to_numeric(pd.Series(closes), errors='coerce').dropna()
+    s = s[s > 0]
+    if len(s) < 2:
+        return None, None
+    last_idx = s.index[-1]
+    last_date = last_idx.date() if hasattr(last_idx, 'date') else last_idx
+    return float(s.iloc[-1] / s.iloc[-2] - 1), last_date
+
+
+def daily_moves(holdings: pd.DataFrame,
+                changes: dict[str, float | None]) -> tuple[pd.DataFrame, float, float | None]:
+    """Euro move of each position caused by price changes only (no buys/sells/deposits).
+
+    holdings: columns Ticker and Value (current value in EUR).
+    changes:  ticker -> fractional price change since the previous close, or None if unknown.
+    Returns (table, total_move_eur, total_change):
+      table has Ticker, Value, Change, Move, sorted by the size of the euro move
+      (positions without a known change go last, with Change/Move = NaN);
+      total_change is the move as a fraction of yesterday's value of the positions
+      with a known change, or None if none are known.
+    """
+    rows = []
+    for _, r in holdings.iterrows():
+        value = float(r['Value'] or 0.0)
+        pct = changes.get(r['Ticker'])
+        if pct is None or pd.isna(pct) or pct <= -1 or value <= 0:
+            rows.append((r['Ticker'], value, float('nan'), float('nan')))
+        else:
+            rows.append((r['Ticker'], value, float(pct), value - value / (1 + pct)))
+    table = pd.DataFrame(rows, columns=['Ticker', 'Value', 'Change', 'Move'])
+    known = table.dropna(subset=['Move'])
+    total_move = float(known['Move'].sum())
+    prev_value = float((known['Value'] - known['Move']).sum())
+    total_change = total_move / prev_value if prev_value > 0 else None
+    table = (table.assign(_size=table['Move'].abs())
+                  .sort_values('_size', ascending=False, na_position='last')
+                  .drop(columns='_size').reset_index(drop=True))
+    return table, total_move, total_change
