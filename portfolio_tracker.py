@@ -6,6 +6,13 @@ import plotly.express as px
 import plotly.graph_objects as go
 from datetime import datetime, timedelta, time, date, timezone, tzinfo
 from zoneinfo import ZoneInfo
+import importlib
+import finance_utils, daily_recap
+# Streamlit Cloud reruns this file after a git push but keeps helper modules
+# cached in memory, so new functions would be missing until a reboot.
+# Reloading them on every run picks up the latest code (they are small and fast).
+importlib.reload(finance_utils)
+importlib.reload(daily_recap)
 from finance_utils import (xirr, investment_cashflows, benchmark_value, plan_deposit,
                            deposit_needed_without_selling, box3_base, next_peildatum, thresholds_for,
                            diff_cashflow, change_from_closes, daily_moves)
