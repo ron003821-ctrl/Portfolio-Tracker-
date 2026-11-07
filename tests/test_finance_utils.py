@@ -117,3 +117,27 @@ def test_daily_moves_euros_totals_and_order():
 def test_daily_moves_nothing_known():
     table, total, pct = daily_moves(pd.DataFrame({'Ticker': ['X'], 'Value': [10.0]}), {})
     assert total == 0 and pct is None and len(table) == 1
+
+
+# ── Overview HTML building blocks ──
+from ui_components import eur, pct, heat_color, sparkline_svg, holdings_table, change_class
+
+def test_eur_and_pct_formatting():
+    assert eur(1234.5) == "€1,234" and eur(-5.691, 2) == "−€5.69" and eur(5.69, 2, sign=True) == "+€5.69"
+    assert pct(0.0123) == "+1.23%" and pct(-0.071, 1) == "−7.1%"
+
+def test_heat_color_scales_with_size_and_direction():
+    assert heat_color(None) == heat_color(float('nan')) == "#2A2E37"
+    assert heat_color(0.001) != heat_color(0.05) and heat_color(-0.001) != heat_color(-0.05)
+    assert heat_color(0.02) != heat_color(-0.02)
+
+def test_sparkline_direction_and_short_input():
+    assert "#3DDC84" in sparkline_svg([1, 2, 3]) and "#FF6B6B" in sparkline_svg([3, 2, 1])
+    assert "<svg" not in sparkline_svg([5]) and "<svg" not in sparkline_svg([])
+
+def test_holdings_table_escapes_tickers_and_handles_missing_change():
+    html = holdings_table([dict(ticker="<b>X</b>", category="ETF", closes=[], change=None,
+                                value=100.0, weight=0.5, profit=-3.0, profit_pct=None)], "Holdings")
+    assert "<b>X</b>" not in html and "&lt;b&gt;X&lt;/b&gt;" in html
+    assert "pf-down" in html and "50.0%" in html
+    assert change_class(None) == "pf-muted"

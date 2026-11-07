@@ -7,16 +7,16 @@ import plotly.graph_objects as go
 from datetime import datetime, timedelta, time, date, timezone, tzinfo
 from zoneinfo import ZoneInfo
 import importlib
-import finance_utils, daily_recap
+import finance_utils, ui_components
 # Streamlit Cloud reruns this file after a git push but keeps helper modules
 # cached in memory, so new functions would be missing until a reboot.
 # Reloading them on every run picks up the latest code (they are small and fast).
 importlib.reload(finance_utils)
-importlib.reload(daily_recap)
+importlib.reload(ui_components)
 from finance_utils import (xirr, investment_cashflows, benchmark_value, plan_deposit,
                            deposit_needed_without_selling, box3_base, next_peildatum, thresholds_for,
                            diff_cashflow, change_from_closes, daily_moves)
-from daily_recap import render_daily_recap
+from ui_components import eur, pct, heat_color, stat_card, stat_row, holdings_table
 
 st.set_page_config(page_title="Portfolio Tracker", page_icon="", layout="wide")
 
@@ -121,7 +121,7 @@ def _price_to_eur(raw_price: float, ticker: str) -> float:
 # -------------------------
 st.markdown("""
 <style>
-    @import url('https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600&family=Inter:wght@300;400;500;600;700&family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@20..48,100..700,0..1,-50..200&display=swap');
+    @import url('https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@20..48,100..700,0..1,-50..200&display=swap');
 
     .material-symbols-outlined {
         font-family: 'Material Symbols Outlined';
@@ -138,303 +138,297 @@ st.markdown("""
         -webkit-font-feature-settings: 'liga';
         -webkit-font-smoothing: antialiased;
         vertical-align: middle;
-        color: #818cf8;
+        color: #4D7CFE;
         margin-right: 0.35rem;
     }
 
     /* ═══════════════════════════════════════════
-       BRAND TOKENS — modern dark slate
-       Slate  #0e0f14 (bg)  #16171e (card)  #121318 (sidebar)  #262833 (border)
-       Indigo #818cf8  rgba(129,140,248,x)
-       Text   #eef0f4 (primary)  #9ca0ab (secondary)  #676c77 (muted)
-       Green  #34d399  Red  #e5484d  Blue #60a5fa
-       Radius buttons: 6px  cards/inputs: 8px
+       BRAND TOKENS — dark app with blue accent
+       Ink    #0C0D10 (bg)  #14161C (card)  #121419 (sidebar)
+       Lines  #1F2229 (card border)  #262A33 (control border)
+       Blue   #4D7CFE  rgba(77,124,254,x)
+       Text   #EDEFF3 (primary)  #A4A9B4 (secondary)  #8D93A0 (muted)
+       Up     #3DDC84   Down #FF6B6B   (only for gains / losses)
+       Categories: ETF #4D7CFE  Stock #22C3B5  Crypto #F5A623  Cash #5B6170
+       Font   Manrope · tabular numbers
+       Radius controls 10–12px · cards 16px
     ═══════════════════════════════════════════ */
 
     html, body, .stApp, .main {
-        font-family: 'Inter', sans-serif !important;
-        background-color: #0e0f14 !important;
-        color: #eef0f4 !important;
+        font-family: 'Manrope', sans-serif !important;
+        background-color: #0C0D10 !important;
+        color: #EDEFF3 !important;
+        font-variant-numeric: tabular-nums;
+    }
+    .stApp p, .stApp li, .stApp label, .stApp input, .stApp textarea, .stApp button, .stApp td, .stApp th {
+        font-family: 'Manrope', sans-serif !important;
     }
 
-    .main .block-container {
-        padding-top: 0 !important;
-        padding-left: 1.5rem !important;
-        padding-right: 1.5rem !important;
-        max-width: 1280px !important;
+    .main .block-container, [data-testid="stMainBlockContainer"] {
+        padding-top: 3.5rem !important;
+        padding-left: 2rem !important;
+        padding-right: 2rem !important;
+        max-width: 1320px !important;
     }
 
     /* ── Typography ── */
-    h1, h2, h3, h4 { font-family: 'Space Grotesk', sans-serif !important; }
-
+    h1, h2, h3, h4 { font-family: 'Manrope', sans-serif !important; }
     h1 {
-        color: #eef0f4 !important;
-        font-size: 1.8rem !important;
-        font-weight: 400 !important;
-        letter-spacing: 0.04em !important;
+        color: #EDEFF3 !important;
+        font-size: 1.65rem !important;
+        font-weight: 800 !important;
+        letter-spacing: -0.02em !important;
         margin-bottom: 0 !important;
+        padding: 0 !important;
         border: none !important;
     }
-
     h2 {
-        color: #eef0f4 !important;
-        font-size: 1.1rem !important;
-        font-weight: 400 !important;
-        letter-spacing: 0.05em !important;
+        color: #EDEFF3 !important;
+        font-size: 1.05rem !important;
+        font-weight: 700 !important;
+        letter-spacing: -0.01em !important;
         -webkit-text-fill-color: unset !important;
         background: none !important;
-        margin-bottom: 0.75rem !important;
+        margin-bottom: 0.6rem !important;
     }
-
     h3 {
-        color: #9ca0ab !important;
-        font-size: 0.72rem !important;
-        font-weight: 400 !important;
-        text-transform: uppercase !important;
-        letter-spacing: 0.14em !important;
+        color: #A4A9B4 !important;
+        font-size: 0.85rem !important;
+        font-weight: 600 !important;
+        text-transform: none !important;
+        letter-spacing: 0 !important;
     }
 
     /* ── Sidebar ── */
     [data-testid="stSidebar"] {
-        background-color: #121318 !important;
-        border-right: 1px solid #262833 !important;
+        background-color: #121419 !important;
+        border-right: 1px solid #1F2229 !important;
+    }
+    [data-testid="stSidebar"] [data-testid="stSidebarUserContent"] { padding-top: 1rem !important; }
+
+    /* Sidebar navigation (the radio with key "nav") as a menu list.
+       Covers both radio markups: newer Streamlit (stRadioOption) and older (baseweb). */
+    .st-key-nav [role="radiogroup"] { gap: 2px !important; width: 100% !important; }
+    .st-key-nav, .st-key-nav [data-testid="stRadio"], .st-key-nav [role="radiogroup"] > div { width: 100% !important; }
+    .st-key-nav [data-testid="stRadioOption"], .st-key-nav label[data-baseweb="radio"] { display: flex !important; }
+    .st-key-nav [data-testid="stRadioOption"], .st-key-nav label[data-baseweb="radio"] {
+        width: 100% !important;
+        margin: 0 !important;
+        padding: 0.65rem 0.8rem !important;
+        border-radius: 10px !important;
+        cursor: pointer !important;
+        transition: background 0.12s !important;
+        box-sizing: border-box !important;
+    }
+    .st-key-nav [data-testid="stRadioOption"] > div > div:not([data-testid="stMarkdownContainer"]),
+    .st-key-nav label[data-baseweb="radio"] > div:first-child { display: none !important; }
+    .st-key-nav [data-testid="stRadioOption"] p, .st-key-nav label[data-baseweb="radio"] p {
+        font-size: 0.92rem !important; font-weight: 500 !important; color: #A4A9B4 !important;
+    }
+    .st-key-nav [data-testid="stRadioOption"] p [role="img"], .st-key-nav label[data-baseweb="radio"] p [role="img"] {
+        margin-right: 0.55rem !important; font-size: 1.15rem !important; vertical-align: -3px !important;
+    }
+    .st-key-nav [data-testid="stRadioOption"]:hover, .st-key-nav label[data-baseweb="radio"]:hover {
+        background: rgba(255,255,255,0.04) !important;
+    }
+    .st-key-nav [data-testid="stRadioOption"][data-selected="true"],
+    .st-key-nav label[data-baseweb="radio"]:has(input:checked) { background: rgba(77,124,254,0.14) !important; }
+    .st-key-nav [data-testid="stRadioOption"][data-selected="true"] p,
+    .st-key-nav label[data-baseweb="radio"]:has(input:checked) p { color: #EDEFF3 !important; font-weight: 700 !important; }
+    .st-key-nav [data-testid="stRadioOption"][data-selected="true"] p [role="img"],
+    .st-key-nav label[data-baseweb="radio"]:has(input:checked) p [role="img"] { color: #4D7CFE !important; }
+
+    .pf-side-label {
+        font-size: 0.75rem; font-weight: 600; color: #8D93A0;
+        margin: 1.2rem 0 0.5rem 0.2rem;
     }
 
-    [data-testid="stSidebar"] .st-expander {
-        background-color: #16171e !important;
-        border: 1px solid #262833 !important;
-        border-radius: 8px !important;
-        margin-bottom: 0.4rem !important;
+    /* ── Expanders ── */
+    [data-testid="stExpander"], [data-testid="stSidebar"] .st-expander {
+        background-color: #14161C !important;
+        border: 1px solid #1F2229 !important;
+        border-radius: 12px !important;
         box-shadow: none !important;
-        transition: border-color 0.15s !important;
     }
+    [data-testid="stSidebar"] [data-testid="stExpander"] { margin-bottom: 0.4rem !important; }
+    [data-testid="stExpander"] details { border: none !important; border-radius: 12px !important; }
+    [data-testid="stExpander"]:hover { border-color: #262A33 !important; }
+    [data-testid="stExpander"] summary p { font-weight: 600 !important; font-size: 0.9rem !important; }
 
-    [data-testid="stSidebar"] .st-expander:hover {
-        border-color: rgba(129,140,248,0.4) !important;
-        transform: none !important;
-        box-shadow: none !important;
-    }
-
-    /* ── Main-area expanders (e.g. All Transactions) ── */
-    [data-testid="stExpander"] {
-        background-color: #16171e !important;
-        border: 1px solid #262833 !important;
-        border-radius: 8px !important;
-        box-shadow: none !important;
-    }
-    [data-testid="stExpander"]:hover {
-        border-color: rgba(129,140,248,0.4) !important;
-    }
-
-    /* ── Navigation Tabs ── */
-    .stTabs [data-baseweb="tab-list"] {
-        background-color: #0e0f14 !important;
-        border-bottom: 1px solid #262833 !important;
-        gap: 0 !important;
-        padding: 0 !important;
-    }
-
+    /* ── Tabs (used inside some pages) ── */
+    .stTabs [data-baseweb="tab-list"] { border-bottom: 1px solid #1F2229 !important; gap: 0.4rem !important; }
     .stTabs [role="tab"] {
         background: transparent !important;
-        border: none !important;
-        border-bottom: 2px solid transparent !important;
-        border-radius: 0 !important;
-        color: #676c77 !important;
-        font-family: 'Inter', sans-serif !important;
-        font-weight: 500 !important;
-        font-size: 0.78rem !important;
-        letter-spacing: 0.07em !important;
-        text-transform: uppercase !important;
-        padding: 0.9rem 1.3rem !important;
-        transition: color 0.15s !important;
-        box-shadow: none !important;
-    }
-
-    .stTabs [role="tab"]:hover {
-        color: #9ca0ab !important;
-        background: rgba(129,140,248,0.03) !important;
-        transform: none !important;
-        box-shadow: none !important;
-    }
-
-    .stTabs [aria-selected="true"] {
-        color: #818cf8 !important;
-        border-bottom: 2px solid #818cf8 !important;
-        background: transparent !important;
+        color: #8D93A0 !important;
         font-weight: 600 !important;
-    }
-
-    /* ── Buttons — 4px radius, gold on hover ── */
-    .stButton > button {
-        background-color: transparent !important;
-        color: #9ca0ab !important;
-        border: 1px solid #2e3040 !important;
-        border-radius: 6px !important;
-        font-family: 'Inter', sans-serif !important;
-        font-weight: 500 !important;
-        font-size: 0.75rem !important;
-        letter-spacing: 0.06em !important;
-        text-transform: uppercase !important;
-        padding: 0.42rem 0.9rem !important;
-        box-shadow: none !important;
-        transition: all 0.15s !important;
-    }
-
-    .stButton > button:hover,
-    .stButton > button:focus,
-    .stButton > button:focus:not(:active),
-    .stButton > button:focus-visible,
-    .stButton > button:active {
-        background-color: rgba(129,140,248,0.08) !important;
-        border-color: #818cf8 !important;
-        color: #818cf8 !important;
-        transform: none !important;
-        box-shadow: none !important;
-        outline: none !important;
-    }
-
-    /* Kill Streamlit's default red hover/focus accents on all buttons */
-    button:hover, button:focus, button:focus-visible {
-        outline: none !important;
-    }
-
-    /* ── Metric Cards — 6px radius ── */
-    [data-testid="stMetric"] {
-        background-color: #16171e !important;
-        border: 1px solid #262833 !important;
-        border-left: 3px solid #818cf8 !important;
-        border-radius: 8px !important;
-        padding: 1.1rem 1.3rem !important;
-        box-shadow: none !important;
-    }
-
-    [data-testid="stMetricLabel"] p {
-        color: #676c77 !important;
-        font-family: 'Inter', sans-serif !important;
-        font-size: 0.63rem !important;
-        font-weight: 600 !important;
-        text-transform: uppercase !important;
-        letter-spacing: 0.11em !important;
-    }
-
-    [data-testid="stMetricValue"] {
-        color: #eef0f4 !important;
-        font-family: 'Space Grotesk', sans-serif !important;
-        font-size: 1.55rem !important;
-        font-weight: 400 !important;
-        letter-spacing: 0.02em !important;
-    }
-
-    [data-testid="stMetricDelta"] {
-        font-size: 0.78rem !important;
-        font-weight: 500 !important;
-    }
-
-    /* ── Inputs ──
-       Border lives on the baseweb CONTAINER (which also holds the eye /
-       step buttons), never on the inner input — otherwise you get a
-       double border on focus. */
-    [data-baseweb="input"],
-    [data-baseweb="base-input"] {
-        background-color: #0e0f14 !important;
-        border: 1px solid #262833 !important;
-        border-radius: 8px !important;
-    }
-
-    [data-baseweb="input"]:focus-within,
-    [data-baseweb="base-input"]:focus-within {
-        border-color: #818cf8 !important;
-        box-shadow: 0 0 0 2px rgba(129,140,248,0.15) !important;
-    }
-
-    /* Nested base-input inside input container: no second border */
-    [data-baseweb="input"] [data-baseweb="base-input"] {
-        border: none !important;
-        box-shadow: none !important;
-        background-color: transparent !important;
-    }
-
-    .stTextInput input,
-    .stNumberInput input,
-    .stDateInput input {
-        background-color: transparent !important;
-        border: none !important;
-        outline: none !important;
-        box-shadow: none !important;
-        color: #eef0f4 !important;
-        font-family: 'Inter', sans-serif !important;
         font-size: 0.85rem !important;
+        padding: 0.7rem 0.9rem !important;
     }
+    .stTabs [aria-selected="true"] { color: #EDEFF3 !important; border-bottom: 2px solid #4D7CFE !important; }
 
-    /* Eye icon (password) and +/- steppers: flat, no own border */
-    .stTextInput [data-baseweb="input"] button,
-    .stNumberInput button {
-        background: transparent !important;
-        border: none !important;
-        outline: none !important;
+    /* ── Buttons ── */
+    .stButton > button, .stDownloadButton > button, .stFormSubmitButton > button {
+        background-color: transparent !important;
+        color: #EDEFF3 !important;
+        border: 1px solid #262A33 !important;
+        border-radius: 12px !important;
+        font-weight: 600 !important;
+        font-size: 0.88rem !important;
+        min-height: 44px !important;
+        padding: 0.45rem 1rem !important;
         box-shadow: none !important;
-        color: #676c77 !important;
+        transition: background 0.12s, border-color 0.12s !important;
     }
-    .stTextInput [data-baseweb="input"] button:hover,
-    .stNumberInput button:hover {
-        color: #818cf8 !important;
+    .stButton > button:hover, .stDownloadButton > button:hover, .stFormSubmitButton > button:hover {
+        background-color: rgba(77,124,254,0.10) !important;
+        border-color: #4D7CFE !important;
+        color: #EDEFF3 !important;
+    }
+    .stButton > button[kind="primary"], .stFormSubmitButton > button[kind="primaryFormSubmit"] {
+        background-color: #4D7CFE !important;
+        border-color: #4D7CFE !important;
+        color: #FFFFFF !important;
+    }
+    .stButton > button[kind="primary"]:hover, .stFormSubmitButton > button[kind="primaryFormSubmit"]:hover {
+        background-color: #3F6CEB !important;
+    }
+    button:focus-visible { outline: 2px solid #4D7CFE !important; outline-offset: 2px !important; }
+
+    /* ── Metric cards ── */
+    [data-testid="stMetric"] {
+        background-color: #14161C !important;
+        border: 1px solid #1F2229 !important;
+        border-radius: 16px !important;
+        padding: 1rem 1.15rem !important;
+        box-shadow: none !important;
+    }
+    [data-testid="stMetricLabel"] p {
+        color: #8D93A0 !important;
+        font-size: 0.82rem !important;
+        font-weight: 500 !important;
+        text-transform: none !important;
+        letter-spacing: 0 !important;
+    }
+    [data-testid="stMetricValue"] {
+        color: #EDEFF3 !important;
+        font-family: 'Manrope', sans-serif !important;
+        font-size: 1.5rem !important;
+        font-weight: 800 !important;
+        letter-spacing: -0.02em !important;
+    }
+
+    /* ── Bordered containers become cards ── */
+    [data-testid="stVerticalBlockBorderWrapper"]:has(> div > [data-testid="stVerticalBlock"]),
+    .st-key-pf-chart, .st-key-pf-map {
+        background-color: #14161C !important;
+        border: 1px solid #1F2229 !important;
+        border-radius: 16px !important;
+    }
+
+    /* ── Segmented control (chart range) ── */
+    [data-testid="stButtonGroup"] { justify-content: flex-end !important; }
+    [data-testid="stButtonGroup"] button {
+        min-height: 32px !important;
+        border-radius: 8px !important;
+        font-size: 0.78rem !important;
+        font-weight: 700 !important;
         background: transparent !important;
+        border: 1px solid transparent !important;
+        color: #8D93A0 !important;
     }
-
-    /* Hide "Press Enter to submit form" / "Press Enter to apply" hints */
-    [data-testid="InputInstructions"] {
-        display: none !important;
+    [data-testid="stButtonGroup"] button:hover { color: #EDEFF3 !important; background: rgba(255,255,255,0.04) !important; }
+    [data-testid="stButtonGroup"] button[aria-checked="true"],
+    [data-testid="stButtonGroup"] button[kind$="Active"],
+    [data-testid="stButtonGroup"] button[data-testid$="Active"] {
+        background: #4D7CFE !important; border-color: #4D7CFE !important; color: #FFFFFF !important;
     }
+    [data-testid="stButtonGroup"] button[aria-checked="true"] p,
+    [data-testid="stButtonGroup"] button[kind$="Active"] p,
+    [data-testid="stButtonGroup"] button[data-testid$="Active"] p { color: #FFFFFF !important; }
 
+    /* ── Inputs ── */
+    [data-baseweb="input"], [data-baseweb="base-input"] {
+        background-color: #0C0D10 !important;
+        border: 1px solid #262A33 !important;
+        border-radius: 10px !important;
+    }
+    [data-baseweb="input"]:focus-within, [data-baseweb="base-input"]:focus-within {
+        border-color: #4D7CFE !important;
+        box-shadow: 0 0 0 2px rgba(77,124,254,0.18) !important;
+    }
+    [data-baseweb="input"] [data-baseweb="base-input"] {
+        border: none !important; box-shadow: none !important; background-color: transparent !important;
+    }
+    .stTextInput input, .stNumberInput input, .stDateInput input {
+        background-color: transparent !important;
+        border: none !important; outline: none !important; box-shadow: none !important;
+        color: #EDEFF3 !important;
+        font-size: 0.9rem !important;
+    }
+    .stTextInput [data-baseweb="input"] button, .stNumberInput button {
+        background: transparent !important; border: none !important; box-shadow: none !important; color: #8D93A0 !important;
+    }
+    .stTextInput [data-baseweb="input"] button:hover, .stNumberInput button:hover { color: #4D7CFE !important; }
+    [data-testid="InputInstructions"] { display: none !important; }
     .stSelectbox > div > div {
-        background-color: #0e0f14 !important;
-        border: 1px solid #262833 !important;
-        border-radius: 8px !important;
-        color: #eef0f4 !important;
+        background-color: #0C0D10 !important;
+        border: 1px solid #262A33 !important;
+        border-radius: 10px !important;
+        color: #EDEFF3 !important;
     }
 
-    /* ── DataFrames — 6px radius ── */
+    /* ── DataFrames ── */
     .stDataFrame {
-        border: 1px solid #262833 !important;
-        border-radius: 8px !important;
+        border: 1px solid #1F2229 !important;
+        border-radius: 12px !important;
         overflow: hidden !important;
         box-shadow: none !important;
     }
-    .stDataFrame:hover { box-shadow: none !important; }
 
     /* ── Misc ── */
-    .stCaption {
-        color: #676c77 !important;
-        font-size: 0.72rem !important;
-        font-style: normal !important;
-    }
-    hr { border-color: #262833 !important; }
-    .stAlert { border-radius: 8px !important; box-shadow: none !important; }
+    .stCaption, [data-testid="stCaptionContainer"] { color: #8D93A0 !important; font-size: 0.78rem !important; font-style: normal !important; }
+    hr { border-color: #1F2229 !important; }
+    .stAlert { border-radius: 12px !important; box-shadow: none !important; }
+
+    /* ── Page header and Overview building blocks (HTML rendered by the app) ── */
+    .pf-sub { color: #8D93A0; font-size: 0.85rem; margin: 0.15rem 0 1.3rem; }
+    .pf-stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); gap: 12px; margin-bottom: 12px; }
+    .pf-card { background: #14161C; border: 1px solid #1F2229; border-radius: 16px; padding: 16px 18px; }
+    .pf-label { color: #8D93A0; font-size: 0.82rem; font-weight: 500; }
+    .pf-value { font-size: 1.75rem; font-weight: 800; letter-spacing: -0.02em; margin-top: 2px; line-height: 1.2; }
+    .pf-small { color: #8D93A0; font-size: 0.78rem; margin-top: 2px; }
+    .pf-card-title { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; flex-wrap: wrap; }
+    .pf-card-title h2 { margin: 0 !important; font-size: 0.95rem !important; }
+    .pf-hint { color: #8D93A0; font-size: 0.75rem; }
+    .pf-table-wrap { background: #14161C; border: 1px solid #1F2229; border-radius: 16px; padding: 16px 2px 6px; margin-top: 12px; }
+    .pf-table-wrap .pf-card-title { padding: 0 16px 6px; }
+    .pf-scroll { overflow-x: auto; }
+    .pf-table { width: 100%; border-collapse: collapse; font-size: 0.88rem; }
+    .pf-table th { color: #8D93A0; font-size: 0.75rem; font-weight: 600; text-align: right; padding: 10px 16px; white-space: nowrap; }
+    .pf-table td { text-align: right; padding: 11px 16px; border-top: 1px solid #1F2229 !important; border-bottom: none !important; white-space: nowrap; }
+    .pf-table th:first-child, .pf-table td:first-child { text-align: left; }
+    .pf-table, .pf-table tr, .pf-table th, .pf-table td { background: transparent !important; border-left: none !important; border-right: none !important; }
+    .pf-table { border: none !important; margin: 0 !important; }
+    .pf-table thead tr th { border-top: none !important; border-bottom: none !important; }
+    .pf-table .pf-tk { font-weight: 700; }
+    .pf-table .pf-cat { color: #8D93A0; margin-left: 6px; }
+    .pf-up { color: #3DDC84 !important; }
+    .pf-down { color: #FF6B6B !important; }
+    .pf-muted { color: #8D93A0 !important; }
 
     /* ── Mobile ── */
     @media (max-width: 768px) {
-        .main .block-container {
-            padding-left: 0.6rem !important;
-            padding-right: 0.6rem !important;
+        .main .block-container, [data-testid="stMainBlockContainer"] {
+            padding-left: 0.9rem !important;
+            padding-right: 0.9rem !important;
+            padding-top: 3.5rem !important;
         }
-        [data-testid="stMetricValue"] { font-size: 1.1rem !important; }
-        [data-testid="stMetricLabel"] p { font-size: 0.56rem !important; }
-        [data-testid="stMetric"] { padding: 0.7rem 0.8rem !important; }
-        .stTabs [role="tab"] {
-            font-size: 0.6rem !important;
-            padding: 0.65rem 0.4rem !important;
-            letter-spacing: 0.04em !important;
-        }
-        /* Header bar: stack vertically on mobile */
-        .main .block-container > div:first-child div[style*="display:flex"] {
-            flex-direction: column !important;
-            align-items: flex-start !important;
-        }
-        /* Sidebar inputs full width */
+        [data-testid="stMetricValue"] { font-size: 1.15rem !important; }
+        .pf-value { font-size: 1.35rem; }
+        .pf-stats { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
+        .pf-card { padding: 12px 14px; }
         .stNumberInput, .stTextInput, .stSelectbox { width: 100% !important; }
-        /* Reduce h1/h2 sizes */
         h1 { font-size: 1.3rem !important; }
-        h2 { font-size: 0.95rem !important; }
     }
 </style>
 """, unsafe_allow_html=True)
@@ -958,22 +952,22 @@ if not st.session_state.logged_in:
     <style>
         [data-testid="stSidebar"] { display: none !important; }
         [data-testid="stForm"] {
-            background: #16171e !important;
-            border: 1px solid #262833 !important;
+            background: #14161C !important;
+            border: 1px solid #1F2229 !important;
             border-radius: 14px !important;
             padding: 1.8rem 1.8rem 1.2rem !important;
             box-shadow: 0 24px 60px rgba(0,0,0,0.45) !important;
         }
         [data-testid="stFormSubmitButton"] > button {
-            background: linear-gradient(135deg, #818cf8 0%, #6366f1 100%) !important;
-            color: #0e0f14 !important;
+            background: linear-gradient(135deg, #4D7CFE 0%, #6366f1 100%) !important;
+            color: #0C0D10 !important;
             border: none !important;
             border-radius: 8px !important;
-            font-family: 'Inter', sans-serif !important;
+            font-family: 'Manrope', sans-serif !important;
             font-weight: 600 !important;
             font-size: 0.8rem !important;
-            letter-spacing: 0.08em !important;
-            text-transform: uppercase !important;
+            !important;
+            !important;
             padding: 0.55rem 1rem !important;
             box-shadow: none !important;
             transition: opacity 0.15s !important;
@@ -982,9 +976,9 @@ if not st.session_state.logged_in:
         [data-testid="stFormSubmitButton"] > button:focus,
         [data-testid="stFormSubmitButton"] > button:active {
             opacity: 0.88 !important;
-            color: #0e0f14 !important;
+            color: #0C0D10 !important;
             outline: none !important;
-            box-shadow: 0 0 24px rgba(129,140,248,0.35) !important;
+            box-shadow: 0 0 24px rgba(77,124,254,0.35) !important;
         }
     </style>
     """, unsafe_allow_html=True)
@@ -995,12 +989,12 @@ if not st.session_state.logged_in:
         st.markdown("""
         <div style='text-align:center; margin-bottom:1.8rem;'>
             <div style='width:54px; height:54px; margin:0 auto 1.1rem; border-radius:14px;
-                        background:linear-gradient(135deg,#818cf8 0%,#6366f1 100%);
+                        background:linear-gradient(135deg,#4D7CFE 0%,#6366f1 100%);
                         display:flex; align-items:center; justify-content:center;
-                        font-family:"Space Grotesk",sans-serif; font-size:1.55rem; font-weight:600;
-                        color:#0e0f14; box-shadow:0 0 40px rgba(129,140,248,0.35);'>P</div>
-            <div style='font-family:"Space Grotesk",sans-serif; font-size:1.8rem; letter-spacing:0.12em; color:#eef0f4; font-weight:500;'>PORTFOLIO</div>
-            <div style='font-family:"Inter",sans-serif; font-size:0.62rem; letter-spacing:0.26em; color:#676c77; text-transform:uppercase; margin-top:0.45rem;'>Wealth Dashboard</div>
+                        font-family:"Manrope",sans-serif; font-size:1.55rem; font-weight:600;
+                        color:#0C0D10; box-shadow:0 0 40px rgba(77,124,254,0.35);'>P</div>
+            <div style='font-family:"Manrope",sans-serif; font-size:1.8rem; color:#EDEFF3; font-weight:500;'>PORTFOLIO</div>
+            <div style='font-family:"Manrope",sans-serif; font-size:0.62rem; color:#8D93A0; margin-top:0.45rem;'>Wealth Dashboard</div>
         </div>
         """, unsafe_allow_html=True)
 
@@ -1017,8 +1011,8 @@ if not st.session_state.logged_in:
                 st.error("Onjuist wachtwoord")
 
         st.markdown(
-            "<div style='text-align:center; font-family:Inter; font-size:0.62rem; "
-            "letter-spacing:0.08em; color:#676c77; margin-top:1.1rem;'>"
+            "<div style='text-align:center; font-family:Manrope; font-size:0.62rem; "
+            "color:#8D93A0; margin-top:1.1rem;'>"
             "🔒 Beveiligde persoonlijke omgeving</div>",
             unsafe_allow_html=True
         )
@@ -1060,14 +1054,33 @@ if "loans" not in st.session_state:
 # Sidebar - Balances
 # -------------------------
 st.sidebar.markdown("""
-<div style='padding:1.25rem 0 1rem 0;'>
-    <div style='font-family:"Space Grotesk",sans-serif; font-size:1.1rem; letter-spacing:0.1em; color:#eef0f4;'>PORTFOLIO</div>
-    <div style='width:32px; height:2px; background:#818cf8; margin-top:0.35rem; margin-bottom:0.4rem;'></div>
-    <div style='font-family:"Inter",sans-serif; font-size:0.6rem; letter-spacing:0.18em; color:#676c77; text-transform:uppercase;'>Wealth Dashboard</div>
+<div style='display:flex; align-items:center; gap:10px; padding:0.2rem 0.2rem 1.2rem;'>
+    <div style='width:32px; height:32px; border-radius:10px; background:#4D7CFE; display:flex; align-items:center; justify-content:center;'>
+        <svg aria-hidden='true' width='18' height='18' viewBox='0 0 24 24' fill='none' stroke='#FFFFFF' stroke-width='2.4' stroke-linecap='round' stroke-linejoin='round'><path d='M3 17l6-6 4 4 8-8'></path></svg>
+    </div>
+    <span style='font-weight:800; font-size:1.05rem; letter-spacing:-0.01em; color:#EDEFF3;'>Portfolio</span>
 </div>
 """, unsafe_allow_html=True)
 
-with st.sidebar.expander("Balances", expanded=False):
+# Page navigation (replaces the old tab bar; only the chosen page is rendered)
+_PAGES = {
+    "Overview":   ":material/dashboard:",
+    "History":    ":material/schedule:",
+    "Cashflow":   ":material/swap_horiz:",
+    "Allocation": ":material/donut_large:",
+    "Charts":     ":material/candlestick_chart:",
+    "Planning":   ":material/insights:",
+}
+_page = st.sidebar.radio(
+    "Navigation", list(_PAGES), key="nav", label_visibility="collapsed",
+    format_func=lambda p: f"{_PAGES[p]} {p}",
+)
+if st.sidebar.button("Refresh prices", icon=":material/refresh:", use_container_width=True):
+    st.cache_data.clear()
+    st.rerun()
+st.sidebar.markdown("<div class='pf-side-label'>Manage</div>", unsafe_allow_html=True)
+
+with st.sidebar.expander("Balances", expanded=False, icon=":material/account_balance_wallet:"):
     st.header("Broker Cash Balance")
     cash_balance_input = st.number_input(
         "Cash Balance (EUR)",
@@ -1113,7 +1126,7 @@ if (
 # -------------------------
 # Sidebar - Add Transaction
 # -------------------------
-with st.sidebar.expander("Add Transaction", expanded=False):
+with st.sidebar.expander("Add transaction", expanded=False, icon=":material/add_circle:"):
     trans_type = st.selectbox("Transaction Type", ['Buy', 'Sell', 'Dividend', 'Staking', 'Staking Reward', 'Transfer'], key="add_trans_type")
     transaction_date = st.date_input("Transaction Date", value=datetime.now(ZoneInfo("Europe/Amsterdam")).date(), key="add_date")
 
@@ -1176,7 +1189,7 @@ with st.sidebar.expander("Add Transaction", expanded=False):
 # -------------------------
 # Sidebar - Edit/Delete Transaction
 # -------------------------
-with st.sidebar.expander("Edit / Delete Transaction", expanded=False):
+with st.sidebar.expander("Edit / delete transaction", expanded=False, icon=":material/edit:"):
     if not st.session_state.get('transactions', pd.DataFrame()).empty:
         trans_index = st.selectbox(
             "Select Transaction to Edit/Delete",
@@ -1242,7 +1255,7 @@ with st.sidebar.expander("Edit / Delete Transaction", expanded=False):
 # Sidebar - Cashflow
 # -------------------------
 # ─── Loans sidebar ───
-with st.sidebar.expander("Loans / Debt", expanded=False):
+with st.sidebar.expander("Loans / debt", expanded=False, icon=":material/credit_card:"):
     st.subheader("Add a Loan")
     loan_type_sel = st.selectbox(
         "Type lening", ["Studentenlening (maandelijks)", "Standaard lening"],
@@ -1330,7 +1343,7 @@ with st.sidebar.expander("Loans / Debt", expanded=False):
                 _lbl    = "resterend"
             st.markdown(
                 f"**{loan_row['Name']}** — €{remaining:,.0f} {_lbl}  \n"
-                f"<span style='font-size:0.78rem; color:#676c77;'>{_detail}</span>",
+                f"<span style='font-size:0.78rem; color:#8D93A0;'>{_detail}</span>",
                 unsafe_allow_html=True
             )
             if st.button("Verwijderen", key=f"loan_del_{loan_row['id']}"):
@@ -1592,18 +1605,16 @@ def _kraken_recent_closes(pair: str) -> pd.Series:
 
 
 @st.cache_data(ttl=300)
-def get_daily_change(ticker):
-    """Price change since the previous close, as (fraction, date of the latest price).
+def get_recent_closes(ticker) -> pd.Series:
+    """Daily closes of the last few days (the last one is today's, still moving).
 
-    Crypto: today (UTC) vs. yesterday's 00:00 UTC close. Stocks/ETFs: latest trading
-    day vs. the one before (on weekends that is Friday vs. Thursday). Both prices come
-    from the same source and currency, so the % is not affected by EUR conversion.
-    Returns (None, None) if no history is found.
+    Crypto: Kraken daily candles (00:00 UTC). Stocks/ETFs: Yahoo daily closes, with the
+    same ticker fallbacks as get_price. Empty Series if nothing is found.
     """
     if ticker in KRAKEN_PAIRS:
-        pct, d = change_from_closes(_kraken_recent_closes(KRAKEN_PAIRS[ticker]))
-        if pct is not None:
-            return pct, d
+        closes = _kraken_recent_closes(KRAKEN_PAIRS[ticker])
+        if closes.dropna().size >= 2:
+            return closes
 
     tickers_to_try = [ticker]
     if ticker in ['VUSA', 'VUSA.AS']:
@@ -1626,29 +1637,22 @@ def get_daily_change(ticker):
     for t in tickers_to_try:
         try:
             closes = yf.Ticker(t).history(period='7d', interval='1d')['Close']
-            pct, d = change_from_closes(closes)
-            if pct is not None:
-                return pct, d
+            if closes.dropna().size >= 2:
+                return closes
         except Exception:
             continue
-    return None, None
+    return pd.Series(dtype=float)
 
 
-def render_daily_recap_section(portfolio_df: pd.DataFrame):
-    """'Since the last close' card at the top of the Dashboard."""
-    if portfolio_df.empty:
-        return
-    changes, stock_dates, has_crypto = {}, [], False
-    for t in portfolio_df['Ticker']:
-        pct, d = get_daily_change(t)
-        changes[t] = pct
-        if get_category(t) == 'Crypto':
-            has_crypto = has_crypto or pct is not None
-        elif d is not None:
-            stock_dates.append(d)
-    table, total_move, total_change = daily_moves(portfolio_df[['Ticker', 'Value']], changes)
-    stock_date = max(set(stock_dates), key=stock_dates.count) if stock_dates else None
-    render_daily_recap(table, total_move, total_change, stock_date, has_crypto, _today_local)
+def get_daily_change(ticker):
+    """Price change since the previous close, as (fraction, date of the latest price).
+
+    Crypto: today (UTC) vs. yesterday's 00:00 UTC close. Stocks/ETFs: latest trading
+    day vs. the one before (on weekends that is Friday vs. Thursday). Both prices come
+    from the same source and currency, so the % is not affected by EUR conversion.
+    Returns (None, None) if no history is found.
+    """
+    return change_from_closes(get_recent_closes(ticker))
 
 # -------------------------
 # Add / Edit / Delete transactions
@@ -1828,87 +1832,46 @@ _invest_value_now = float(portfolio_df['Value'].sum()) if not portfolio_df.empty
 _inv_flows        = investment_cashflows(st.session_state.transactions)
 _xirr             = xirr(_inv_flows + [(_today_local, _invest_value_now)]) if _inv_flows else None
 _xirr_pct         = _xirr * 100 if _xirr is not None else None
-_profit_color = "#34d399" if total_profit >= 0 else "#e5484d"
-_profit_sign  = "+" if total_profit >= 0 else ""
-_pct_sign     = "+" if profit_percentage >= 0 else ""
-_today_str    = datetime.now(ZoneInfo("Europe/Amsterdam")).strftime("%d %b %Y").upper()
-
-# Use CSS display to show/hide the debt block — avoids injecting HTML into the f-string
-_debt_display  = 'block' if _total_debt > 0 else 'none'
-_debt_str      = f"-€{_total_debt:,.0f}"   # unicode minus + euro sign, no curly braces
-
-_header_parts = [
-    "<div style='background:#16171e; border-bottom:1px solid #262833; padding:1.4rem 1.5rem 1.2rem; margin:-0 -1.5rem 0; display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:1rem;'>",
-    "  <div>",
-    "    <div style='font-family:\"Space Grotesk\",sans-serif; font-size:1.6rem; letter-spacing:0.08em; color:#eef0f4; line-height:1;'>PORTFOLIO</div>",
-    "    <div style='width:36px; height:2px; background:#818cf8; margin:0.4rem 0 0.3rem;'></div>",
-    f"    <div style='font-family:\"Inter\",sans-serif; font-size:0.6rem; letter-spacing:0.2em; color:#676c77; text-transform:uppercase;'>{_today_str}</div>",
-    "  </div>",
-    "  <div style='display:flex; gap:2.5rem; flex-wrap:wrap;'>",
-    # Total Assets
-    "    <div style='text-align:right;'>",
-    "      <div style='font-family:\"Inter\",sans-serif; font-size:0.6rem; letter-spacing:0.14em; color:#676c77; text-transform:uppercase; margin-bottom:0.25rem;'>Total Assets</div>",
-    f"      <div style='font-family:\"Space Grotesk\",sans-serif; font-size:1.5rem; color:#eef0f4; letter-spacing:0.03em;'>€{_total_value:,.0f}</div>",
-    "    </div>",
-    # Debt (hidden with CSS when no loans)
-    f"    <div style='text-align:right; display:{_debt_display};'>",
-    "      <div style='font-family:\"Inter\",sans-serif; font-size:0.6rem; letter-spacing:0.14em; color:#676c77; text-transform:uppercase; margin-bottom:0.25rem;'>Debt</div>",
-    f"      <div style='font-family:\"Space Grotesk\",sans-serif; font-size:1.5rem; color:#e5484d; letter-spacing:0.03em;'>{_debt_str}</div>",
-    "    </div>",
-    # Net Worth
-    "    <div style='text-align:right;'>",
-    "      <div style='font-family:\"Inter\",sans-serif; font-size:0.6rem; letter-spacing:0.14em; color:#676c77; text-transform:uppercase; margin-bottom:0.25rem;'>Net Worth</div>",
-    f"      <div style='font-family:\"Space Grotesk\",sans-serif; font-size:1.5rem; color:#eef0f4; letter-spacing:0.03em;'>€{_net_worth:,.0f}</div>",
-    "    </div>",
-    # Total P&L
-    "    <div style='text-align:right;'>",
-    "      <div style='font-family:\"Inter\",sans-serif; font-size:0.6rem; letter-spacing:0.14em; color:#676c77; text-transform:uppercase; margin-bottom:0.25rem;'>Total P&amp;L</div>",
-    f"      <div style='font-family:\"Space Grotesk\",sans-serif; font-size:1.5rem; color:{_profit_color}; letter-spacing:0.03em;'>{_profit_sign}€{total_profit:,.0f}</div>",
-    "    </div>",
-    # Return
-    "    <div style='text-align:right;'>",
-    "      <div style='font-family:\"Inter\",sans-serif; font-size:0.6rem; letter-spacing:0.14em; color:#676c77; text-transform:uppercase; margin-bottom:0.25rem;'>Return</div>",
-    f"      <div style='font-family:\"Space Grotesk\",sans-serif; font-size:1.5rem; color:{_profit_color}; letter-spacing:0.03em;'>{_pct_sign}{profit_percentage:.1f}%</div>",
-    "    </div>",
-    "  </div>",
-    "</div>",
-    "<div style='height:3px; background:linear-gradient(90deg,#818cf8 0%,rgba(129,140,248,0.15) 60%,transparent 100%);'></div>",
-]
-st.markdown("\n".join(_header_parts), unsafe_allow_html=True)
-
-st.markdown("<div style='height:0.5rem;'></div>", unsafe_allow_html=True)
-_rcol1, _rcol2 = st.columns([6, 1])
-with _rcol2:
-    if st.button("Refresh", use_container_width=True):
-        st.cache_data.clear()
-        st.rerun()
+_today_label = datetime.now(ZoneInfo("Europe/Amsterdam")).strftime("%A %-d %B")
+_PAGE_SUBTITLES = {
+    "Overview":   "Stocks and ETFs at their latest close, crypto since 00:00 UTC",
+    "History":    "How your portfolio value developed",
+    "Cashflow":   "Monthly income and expenses",
+    "Allocation": "How your money is spread, and your targets",
+    "Charts":     "Price history per asset",
+    "Planning":   "Goals, deposits and projections",
+}
+st.markdown(
+    f"<h1>{_page}</h1><div class='pf-sub'>{_today_label} · {_PAGE_SUBTITLES.get(_page, '')}</div>",
+    unsafe_allow_html=True,
+)
 
 # Category colors (used by Overview dashboard and Allocation tab)
-_CAT_COLORS = {'ETF': '#34d399', 'Stock': '#60a5fa', 'Crypto': '#818cf8', 'Cash & Banks': '#676c77'}
+_CAT_COLORS = {'ETF': '#4D7CFE', 'Stock': '#22C3B5', 'Crypto': '#F5A623', 'Cash & Banks': '#5B6170'}
 
 # Shared Plotly chart layout (used by History and Charts tabs)
 _CHART_LAYOUT = dict(
-    plot_bgcolor="#0e0f14",
-    paper_bgcolor="#0e0f14",
-    font=dict(family="Inter", color="#676c77", size=11),
-    xaxis=dict(gridcolor="#262833", linecolor="#262833", tickfont=dict(color="#676c77"), zeroline=False),
-    yaxis=dict(gridcolor="#262833", linecolor="#262833", tickfont=dict(color="#676c77"), zeroline=False),
+    plot_bgcolor="#0C0D10",
+    paper_bgcolor="#0C0D10",
+    font=dict(family="Manrope", color="#8D93A0", size=11),
+    xaxis=dict(gridcolor="#1F2229", linecolor="#1F2229", tickfont=dict(color="#8D93A0"), zeroline=False),
+    yaxis=dict(gridcolor="#1F2229", linecolor="#1F2229", tickfont=dict(color="#8D93A0"), zeroline=False),
     margin=dict(l=10, r=10, t=100, b=10),
     hovermode="x unified",
-    hoverlabel=dict(bgcolor="#16171e", bordercolor="#262833", font=dict(family="Inter", color="#eef0f4", size=12)),
+    hoverlabel=dict(bgcolor="#14161C", bordercolor="#1F2229", font=dict(family="Manrope", color="#EDEFF3", size=12)),
     legend=dict(orientation="h", yanchor="bottom", y=1.06, xanchor="left", x=0,
-                font=dict(family="Inter", color="#9ca0ab", size=11), bgcolor="rgba(0,0,0,0)", borderwidth=0),
+                font=dict(family="Manrope", color="#A4A9B4", size=11), bgcolor="rgba(0,0,0,0)", borderwidth=0),
 )
 
 # -------------------------
 # Navigation tabs
 # -------------------------
-def _card(title: str, body_html: str, accent: str = "#818cf8") -> str:
+def _card(title: str, body_html: str, accent: str = "#4D7CFE") -> str:
     return (
-        f"<div style='background:#16171e; border:1px solid #262833; border-left:3px solid {accent}; "
-        f"border-radius:8px; padding:1rem 1.2rem; height:100%;'>"
-        f"<div style='font-family:Inter; font-size:0.6rem; text-transform:uppercase; letter-spacing:0.12em; "
-        f"color:#676c77; margin-bottom:0.45rem;'>{title}</div>{body_html}</div>"
+        f"<div style='background:#14161C; border:1px solid #1F2229; "
+        f"border-radius:16px; padding:1rem 1.2rem; height:100%;'>"
+        f"<div style='font-family:Manrope; font-size:0.78rem; "
+        f"color:#8D93A0; margin-bottom:0.45rem;'>{title}</div>{body_html}</div>"
     )
 
 
@@ -1917,36 +1880,141 @@ def _benchmark_prices(ticker: str) -> pd.DataFrame:
     return get_historical_data(ticker, period='max')
 
 
-def render_returns_row():
-    """XIRR of the portfolio vs. the same euros put into one world ETF (VWCE)."""
-    bench_ticker = 'VWCE.DE'
+def _benchmark_diff():
+    """Your investments now minus the same euros put into a world ETF (VWCE) on the same dates."""
     b_flows = investment_cashflows(st.session_state.transactions, include_dividends=False)
-    b_val = benchmark_value(b_flows, _benchmark_prices(bench_ticker)) if b_flows else None
-    b_xirr = xirr(b_flows + [(_today_local, b_val)]) if b_val else None
-    invested = -sum(a for _, a in b_flows if a < 0)
+    b_val = benchmark_value(b_flows, _benchmark_prices('VWCE.DE')) if b_flows else None
+    return (_invest_value_now - b_val) if b_val is not None else None
 
-    c1, c2, c3 = st.columns(3)
-    _x = f"{_xirr_pct:+.1f}%" if _xirr_pct is not None else "—"
-    c1.markdown(_card("Your return per year (XIRR)",
-        f"<div style='font-family:Space Grotesk; font-size:1.5rem; color:#eef0f4;'>{_x}</div>"
-        f"<div style='font-family:Inter; font-size:0.7rem; color:#9ca0ab;'>Weighs each euro by how long it was invested</div>"),
-        unsafe_allow_html=True)
-    if b_val is not None:
-        diff = _invest_value_now - b_val
-        _bx = f"{b_xirr * 100:+.1f}%/yr" if b_xirr is not None else ""
-        c2.markdown(_card("Same euros in VWCE (world ETF)",
-            f"<div style='font-family:Space Grotesk; font-size:1.5rem; color:#eef0f4;'>€{b_val:,.0f}</div>"
-            f"<div style='font-family:Inter; font-size:0.7rem; color:#9ca0ab;'>{_bx} · same dates & amounts</div>", "#34d399"),
-            unsafe_allow_html=True)
-        _col = "#34d399" if diff >= 0 else "#e5484d"
-        c3.markdown(_card("You vs. benchmark",
-            f"<div style='font-family:Space Grotesk; font-size:1.5rem; color:{_col};'>{'+' if diff >= 0 else '−'}€{abs(diff):,.0f}</div>"
-            f"<div style='font-family:Inter; font-size:0.7rem; color:#9ca0ab;'>Your €{_invest_value_now:,.0f} vs €{b_val:,.0f} (invested €{invested:,.0f})</div>", _col),
-            unsafe_allow_html=True)
-    else:
-        c2.markdown(_card("Benchmark", "<div style='font-family:Inter; font-size:0.8rem; color:#9ca0ab;'>"
-                          "No VWCE price history available right now — try Refresh later.</div>", "#34d399"),
-                    unsafe_allow_html=True)
+
+def _net_worth_figure(hist: pd.DataFrame) -> go.Figure:
+    fig = go.Figure(go.Scatter(
+        x=hist['date'], y=hist['total_value'], mode="lines",
+        line=dict(color="#4D7CFE", width=2.5, shape="spline", smoothing=0.6),
+        fill="tozeroy", fillcolor="rgba(77,124,254,0.14)",
+        hovertemplate="%{x|%d %b %Y}<br><b>€%{y:,.0f}</b><extra></extra>",
+    ))
+    lo, hi = float(hist['total_value'].min()), float(hist['total_value'].max())
+    pad = (hi - lo) * 0.15 or hi * 0.05 or 1
+    fig.update_layout(
+        plot_bgcolor="rgba(0,0,0,0)", paper_bgcolor="rgba(0,0,0,0)",
+        font=dict(family="Manrope", color="#8D93A0", size=11),
+        xaxis=dict(showgrid=False, linecolor="#1F2229", zeroline=False, tickformat="%b"),
+        yaxis=dict(gridcolor="#1F2229", zeroline=False, side="right", tickprefix="€",
+                   tickformat=",.0f", range=[lo - pad, hi + pad]),
+        margin=dict(l=0, r=0, t=6, b=0), height=280, showlegend=False, hovermode="x",
+        hoverlabel=dict(bgcolor="#14161C", bordercolor="#262A33",
+                        font=dict(family="Manrope", color="#EDEFF3", size=12)),
+    )
+    return fig
+
+
+def _today_map_figure(df: pd.DataFrame) -> go.Figure:
+    """Treemap: tile size = position value, tile color = today's move."""
+    labels = df['Ticker'].tolist()
+    text = [pct(c) if c is not None and not pd.isna(c) else "—" for c in df['Change']]
+    moves = [eur(m, 2, sign=True) if not pd.isna(m) else "" for m in df['Move']]
+    fig = go.Figure(go.Treemap(
+        labels=labels, parents=[""] * len(labels), values=df['Value'].tolist(),
+        marker=dict(colors=[heat_color(c) for c in df['Change']], line=dict(color="#14161C", width=3),
+                    pad=dict(t=0, l=0, r=0, b=0)),
+        customdata=list(zip(text, moves)),
+        texttemplate="<b>%{label}</b><br>%{customdata[0]}",
+        textfont=dict(family="Manrope", color="#FFFFFF", size=14),
+        textposition="top left",
+        hovertemplate="<b>%{label}</b><br>%{customdata[0]} · %{customdata[1]}<br>€%{value:,.0f}<extra></extra>",
+        tiling=dict(packing="squarify", pad=3), root=dict(color="rgba(0,0,0,0)"),
+        sort=True,
+    ))
+    fig.update_layout(paper_bgcolor="rgba(0,0,0,0)", margin=dict(l=0, r=0, t=0, b=0), height=300,
+                      hoverlabel=dict(bgcolor="#14161C", bordercolor="#262A33",
+                                      font=dict(family="Manrope", color="#EDEFF3", size=12)))
+    return fig
+
+
+def render_overview_top(portfolio_df: pd.DataFrame):
+    """Stat cards, net worth chart, today's map and the holdings table."""
+    cash_total = _cash + _credit + _cic
+    closes, changes = {}, {}
+    if not portfolio_df.empty:
+        for t in portfolio_df['Ticker']:
+            s_ = get_recent_closes(t)
+            closes[t] = s_
+            changes[t] = change_from_closes(s_)[0]
+    moves, today_move, today_change = (daily_moves(portfolio_df[['Ticker', 'Value']], changes)
+                                       if not portfolio_df.empty else (pd.DataFrame(), 0.0, None))
+    n_up = int((moves['Move'] > 0).sum()) if not moves.empty else 0
+    n_down = int((moves['Move'] < 0).sum()) if not moves.empty else 0
+
+    # ── Stat cards ──
+    nw_sub = f"invested {eur(_invest_value_now)} · cash {eur(cash_total)}"
+    if _total_debt > 0:
+        nw_sub += f" · debt {eur(_total_debt)}"
+    today_cls = "pf-up" if today_move > 0 else "pf-down" if today_move < 0 else ""
+    today_sub = (f"{pct(today_change)} · {n_up} up, {n_down} down" if today_change is not None
+                 else "no price history right now")
+    invested = float(portfolio_df['Cost Basis'].sum()) if not portfolio_df.empty else 0.0
+    bench = _benchmark_diff() if not portfolio_df.empty else None
+    xirr_sub = (f"{eur(bench, sign=True)} vs world ETF" if bench is not None
+                else "money-weighted (XIRR)")
+    st.markdown(stat_row([
+        stat_card("Net worth", eur(_net_worth), nw_sub),
+        stat_card("Today", eur(today_move, 2, sign=True), today_sub, today_cls),
+        stat_card("Total profit", eur(total_profit, sign=True),
+                  f"{profit_percentage:+.1f}% on {eur(invested)}"),
+        stat_card("Return per year", f"{_xirr_pct:+.1f}%" if _xirr_pct is not None else "—", xirr_sub),
+    ]), unsafe_allow_html=True)
+
+    # ── Net worth chart + today's map ──
+    left, right = st.columns([1.75, 1], gap="small")
+    with left:
+        with st.container(border=True, key="pf-chart"):
+            h1c, h2c = st.columns([1, 1])
+            h1c.markdown("<div class='pf-card-title'><h2>Net worth</h2></div>", unsafe_allow_html=True)
+            rng = h2c.segmented_control("Range", ["1M", "3M", "6M", "1Y", "All"], default="6M",
+                                        key="nw_range", label_visibility="collapsed")
+            hist = load_portfolio_value_history()
+            if not hist.empty:
+                hist = hist.copy()
+                hist['date'] = pd.to_datetime(hist['date'])
+                days = {"1M": 31, "3M": 92, "6M": 183, "1Y": 366}.get(rng or "All")
+                if days:
+                    hist = hist[hist['date'] >= pd.Timestamp(_today_local) - pd.Timedelta(days=days)]
+            if len(hist) >= 2:
+                st.plotly_chart(_net_worth_figure(hist), use_container_width=True,
+                                config={"displayModeBar": False})
+            else:
+                st.markdown("<div class='pf-muted' style='height:280px; display:flex; align-items:center; "
+                            "justify-content:center;'>The chart appears after a few days of history.</div>",
+                            unsafe_allow_html=True)
+    with right:
+        with st.container(border=True, key="pf-map"):
+            st.markdown("<div class='pf-card-title'><h2>Today's map</h2>"
+                        "<span class='pf-hint'>size = position · color = move</span></div>",
+                        unsafe_allow_html=True)
+            if not moves.empty:
+                st.plotly_chart(_today_map_figure(moves), use_container_width=True,
+                                config={"displayModeBar": False})
+            else:
+                st.markdown("<div class='pf-muted'>No positions yet.</div>", unsafe_allow_html=True)
+
+    # ── Holdings table with 5-day sparklines ──
+    if portfolio_df.empty:
+        return
+    inv_total = float(portfolio_df['Value'].sum()) or 1.0
+    rows = []
+    for _, r in portfolio_df.sort_values('Value', ascending=False).iterrows():
+        cb = float(r['Cost Basis'])
+        rows.append(dict(
+            ticker=r['Ticker'], category=get_category(r['Ticker']),
+            closes=closes.get(r['Ticker'], pd.Series(dtype=float)).dropna().tail(6).tolist(),
+            change=changes.get(r['Ticker']), value=float(r['Value']),
+            weight=float(r['Value']) / inv_total,
+            profit=float(r['Unrealized Profit/Loss']),
+            profit_pct=(float(r['Unrealized Profit/Loss']) / cb) if cb > 0 else None,
+        ))
+    hint = f"{len(rows)} positions · {eur(inv_total)}"
+    st.markdown(holdings_table(rows, "Holdings", hint), unsafe_allow_html=True)
 
 
 def render_year_start_check():
@@ -1983,52 +2051,43 @@ def render_year_start_check():
     ]
     days = (peil - _today_local).days
     worst = min(lim - base for _, lim, _m in rows)
-    accent = "#e5484d" if worst < 0 else ("#f5a524" if worst < 5000 else "#34d399")
+    accent = "#FF6B6B" if worst < 0 else ("#f5a524" if worst < 5000 else "#3DDC84")
 
     with st.expander(f"1 January check — {peil:%d %b %Y} ({days} days)", expanded=worst < 5000):
         yr_note = "" if thr_year == peil.year else f" Limits shown are {thr_year}'s; {peil.year}'s aren't in the app yet."
         st.markdown(
-            "<p style='font-family:Inter; font-size:0.78rem; color:#9ca0ab;'>"
+            "<p style='font-family:Manrope; font-size:0.78rem; color:#A4A9B4;'>"
             f"Your assets on 1 January decide toeslagen and Box 3 for the whole year. "
-            f"Assets today <b style='color:#eef0f4;'>€{_total_value:,.0f}</b> − debts above the "
+            f"Assets today <b style='color:#EDEFF3;'>€{_total_value:,.0f}</b> − debts above the "
             f"€{thr['debt_threshold']:,.0f} threshold (loans on {peil:%d-%m-%Y}: €{debt_peil:,.0f}) "
-            f"= <b style='color:#eef0f4;'>€{base:,.0f}</b>.{yr_note}</p>",
+            f"= <b style='color:#EDEFF3;'>€{base:,.0f}</b>.{yr_note}</p>",
             unsafe_allow_html=True)
         cols = st.columns(3)
         for col, (label, lim, monthly) in zip(cols, rows):
             room = lim - base
             if room >= 0:
-                val, colr = f"€{room:,.0f} room", ("#f5a524" if room < 5000 else "#34d399")
+                val, colr = f"€{room:,.0f} room", ("#f5a524" if room < 5000 else "#3DDC84")
             else:
-                val, colr = f"€{-room:,.0f} over", "#e5484d"
+                val, colr = f"€{-room:,.0f} over", "#FF6B6B"
             sub = f"Limit €{lim:,.0f}"
             if monthly:
                 sub += f" · at stake ≈ €{monthly * 12:,.0f}/yr"
             col.markdown(_card(label,
-                f"<div style='font-family:Space Grotesk; font-size:1.3rem; color:{colr};'>{val}</div>"
-                f"<div style='font-family:Inter; font-size:0.7rem; color:#9ca0ab;'>{sub}</div>", colr),
+                f"<div style='font-family:Manrope; font-size:1.3rem; color:{colr};'>{val}</div>"
+                f"<div style='font-family:Manrope; font-size:0.7rem; color:#A4A9B4;'>{sub}</div>", colr),
                 unsafe_allow_html=True)
         st.markdown(
-            "<p style='font-family:Inter; font-size:0.68rem; color:#676c77; margin-top:0.6rem;'>"
+            "<p style='font-family:Manrope; font-size:0.68rem; color:#8D93A0; margin-top:0.6rem;'>"
             "Estimate using today's prices, single-person limits, and every account you track. "
             "Confirm with the proefberekening on toeslagen.nl. Update the limits yearly in finance_utils.py.</p>",
             unsafe_allow_html=True)
 
 
-tab_overview, tab_history, tab_cashflow, tab_allocation, tab_charts, tab_planning = st.tabs([
-    "Overview",
-    "History",
-    "Cashflow",
-    "Allocation",
-    "Charts",
-    "Planning"
-])
 
 # -------------------------
 # Tab: Cashflow
 # -------------------------
-with tab_cashflow:
-    st.markdown("<h2><span class='material-symbols-outlined' style='font-size:20px;'>account_balance_wallet</span> Cashflow</h2>", unsafe_allow_html=True)
+if _page == "Cashflow":
 
     _cf = st.session_state.cashflow.copy()
     if _cf.empty:
@@ -2038,21 +2097,21 @@ with tab_cashflow:
     total_income   = float(_cf.loc[_cf['Amount'] > 0, 'Amount'].sum()) if not _cf.empty else 0.0
     total_expenses = float(-_cf.loc[_cf['Amount'] < 0, 'Amount'].sum()) if not _cf.empty else 0.0
     net_cashflow   = total_income - total_expenses
-    _net_col = "#34d399" if net_cashflow >= 0 else "#e5484d"
+    _net_col = "#3DDC84" if net_cashflow >= 0 else "#FF6B6B"
     _sc = st.columns(3)
     _sc[0].markdown(_card("Income / month",
-        f"<div style='font-family:Space Grotesk; font-size:1.4rem; color:#34d399;'>€{total_income:,.2f}</div>", "#34d399"),
+        f"<div style='font-family:Manrope; font-size:1.4rem; color:#3DDC84;'>€{total_income:,.2f}</div>", "#3DDC84"),
         unsafe_allow_html=True)
     _sc[1].markdown(_card("Expenses / month",
-        f"<div style='font-family:Space Grotesk; font-size:1.4rem; color:#e5484d;'>€{total_expenses:,.2f}</div>", "#e5484d"),
+        f"<div style='font-family:Manrope; font-size:1.4rem; color:#FF6B6B;'>€{total_expenses:,.2f}</div>", "#FF6B6B"),
         unsafe_allow_html=True)
     _sc[2].markdown(_card("Left over / month",
-        f"<div style='font-family:Space Grotesk; font-size:1.4rem; color:{_net_col};'>{'−' if net_cashflow < 0 else ''}€{abs(net_cashflow):,.2f}</div>", "#818cf8"),
+        f"<div style='font-family:Manrope; font-size:1.4rem; color:{_net_col};'>{'−' if net_cashflow < 0 else ''}€{abs(net_cashflow):,.2f}</div>", "#4D7CFE"),
         unsafe_allow_html=True)
 
     st.markdown("<div style='height:1rem;'></div>", unsafe_allow_html=True)
     st.markdown(
-        "<p style='font-family:Inter; font-size:0.8rem; color:#9ca0ab;'>"
+        "<p style='font-family:Manrope; font-size:0.8rem; color:#A4A9B4;'>"
         "Edit directly in the table: click a cell to change it, use the <b>+</b> row at the bottom to add, "
         "select a row and press <b>Delete</b> (or the bin icon) to remove. Amounts are per month, always positive "
         "— the Type decides income or expense. Nothing is saved until you press <b>Save changes</b>.</p>",
@@ -2092,7 +2151,7 @@ with tab_cashflow:
     with _bc2:
         if _n_changes:
             st.markdown(
-                f"<p style='font-family:Inter; font-size:0.75rem; color:#f5a524; padding-top:0.55rem;'>"
+                f"<p style='font-family:Manrope; font-size:0.75rem; color:#f5a524; padding-top:0.55rem;'>"
                 f"Unsaved: {len(_ins)} new · {len(_upd)} changed · {len(_dels)} deleted</p>",
                 unsafe_allow_html=True)
     if _save:
@@ -2108,15 +2167,9 @@ with tab_cashflow:
 # -------------------------
 # Tab: Historical Portfolio Value
 # -------------------------
-with tab_history:
-    st.markdown(
-        "<h2 style='margin-bottom:0.5rem;'>"
-        "<span class='material-symbols-outlined' style='font-size:20px;'>trending_up</span> Portfolio History"
-        "&nbsp;<span class='material-symbols-outlined' style='font-size:15px; color:#676c77; cursor:help; vertical-align:middle;' "
-        "title='Logs total portfolio value daily (assets + broker cash + bank balances). Compares to a No Investment baseline — what your wealth would be if you kept everything in cash.'>help</span>"
-        "</h2>",
-        unsafe_allow_html=True
-    )
+if _page == "History":
+    st.caption("Logs total portfolio value daily (assets + broker cash + bank balances), compared with a "
+               "no-investment baseline: what your wealth would be if you had kept everything in cash.")
 
     portfolio_df_current, _, _, _, _ = compute_portfolio()
     assets_total = portfolio_df_current["Value"].sum() if not portfolio_df_current.empty else 0.0
@@ -2159,17 +2212,17 @@ with tab_history:
         fig_total.add_trace(go.Scatter(
             x=plot_df["Date"], y=plot_df["Total Portfolio Value (€)"],
             mode="lines", name="Portfolio Value",
-            line=dict(color="#818cf8", width=2.5),
+            line=dict(color="#4D7CFE", width=2.5),
             hovertemplate="€%{y:,.2f}<extra></extra>"
         ))
         fig_total.add_trace(go.Scatter(
             x=plot_df["Date"], y=plot_df["No Investment (€)"],
             mode="lines", name="No Investment",
-            line=dict(color="#9ca0ab", width=2, dash="dot"),
+            line=dict(color="#A4A9B4", width=2, dash="dot"),
             hovertemplate="€%{y:,.2f}<extra></extra>"
         ))
         fig_total.update_layout(
-            title=dict(text="Portfolio Value vs. No Investment", font=dict(family="Space Grotesk", color="#eef0f4", size=15), x=0),
+            title=dict(text="Portfolio Value vs. No Investment", font=dict(family="Manrope", color="#EDEFF3", size=15), x=0),
             yaxis_title="Value (€)",
             **_CHART_LAYOUT
         )
@@ -2184,16 +2237,16 @@ with tab_history:
         col1.metric("Current Portfolio Value", f"€{latest:,.2f}")
         col2.metric("No Investment (Cash Equivalent)", f"€{baseline:,.2f}")
 
-        _delta_col = "#34d399" if delta_vs_baseline >= 0 else "#e5484d"
+        _delta_col = "#3DDC84" if delta_vs_baseline >= 0 else "#FF6B6B"
         _delta_sign = "+" if delta_vs_baseline >= 0 else ""
         st.markdown(
-            f"<div style='font-family:Inter; font-size:0.62rem; text-transform:uppercase; letter-spacing:0.12em; color:#676c77; margin:0.75rem 0 0.25rem;'>vs. No Investment &nbsp;"
-            f"<span style='color:{_delta_col}; font-family:\"Space Grotesk\"; font-size:1.2rem; font-weight:400; letter-spacing:0.03em;'>{_delta_sign}€{delta_vs_baseline:,.2f} ({pct_vs_baseline:.2f}%)</span></div>",
+            f"<div style='font-family:Manrope; font-size:0.62rem; color:#8D93A0; margin:0.75rem 0 0.25rem;'>vs. No Investment &nbsp;"
+            f"<span style='color:{_delta_col}; font-family:\"Manrope\"; font-size:1.2rem; font-weight:400; letter-spacing:0.03em;'>{_delta_sign}€{delta_vs_baseline:,.2f} ({pct_vs_baseline:.2f}%)</span></div>",
             unsafe_allow_html=True,
         )
 
     st.markdown("---")
-    st.markdown("<h3 style='margin-bottom:0.5rem;'><span class='material-symbols-outlined' style='font-size:16px; color:#676c77;'>savings</span> Compare With Bank Savings</h3>", unsafe_allow_html=True)
+    st.markdown("<h3 style='margin-bottom:0.5rem;'><span class='material-symbols-outlined' style='font-size:16px; color:#8D93A0;'>savings</span> Compare With Bank Savings</h3>", unsafe_allow_html=True)
 
     bank_interest_rate = st.number_input(
         "Annual Interest Rate (%)",
@@ -2213,14 +2266,14 @@ with tab_history:
 
         st.markdown(
             f"""
-            <div style="background:#16171e; border:1px solid #262833; border-left:3px solid #818cf8; border-radius:8px; padding:1.2rem 1.4rem;">
-                <div style="font-family:Inter; font-size:0.6rem; text-transform:uppercase; letter-spacing:0.14em; color:#676c77; margin-bottom:0.4rem;">
+            <div style="background:#14161C; border:1px solid #1F2229; border-radius:8px; padding:1.2rem 1.4rem;">
+                <div style="font-family:Manrope; font-size:0.78rem; color:#8D93A0; margin-bottom:0.4rem;">
                     At {bank_interest_rate:.2f}% annual interest
                 </div>
-                <div style="font-family:'Space Grotesk'; font-size:1.6rem; color:#34d399; letter-spacing:0.03em; margin-bottom:0.2rem;">
+                <div style="font-family:'Manrope'; font-size:1.6rem; color:#3DDC84; letter-spacing:0.03em; margin-bottom:0.2rem;">
                     €{total_with_interest:,.2f}
                 </div>
-                <div style="font-family:Inter; font-size:0.78rem; color:#676c77;">Interest gain: +€{interest_gain:,.2f}</div>
+                <div style="font-family:Manrope; font-size:0.78rem; color:#8D93A0;">Interest gain: +€{interest_gain:,.2f}</div>
             </div>
             """,
             unsafe_allow_html=True
@@ -2229,176 +2282,93 @@ with tab_history:
 # -------------------------
 # Tab: Portfolio Overview
 # -------------------------
-with tab_overview:
-    st.markdown("<h2><span class='material-symbols-outlined' style='font-size:20px;'>dashboard</span> Dashboard</h2>", unsafe_allow_html=True)
-
-    render_daily_recap_section(portfolio_df)
-    st.markdown("<div style='height:0.8rem;'></div>", unsafe_allow_html=True)
-
-    render_year_start_check()
-    render_returns_row()
-    st.markdown("<div style='height:0.8rem;'></div>", unsafe_allow_html=True)
-
+if _page == "Overview":
     portfolio_df, realized, unrealized, total_profit, profit_percentage = compute_portfolio()
+    render_overview_top(portfolio_df)
+    st.markdown("<div style='height:12px'></div>", unsafe_allow_html=True)
+    render_year_start_check()
 
     if not portfolio_df.empty:
-        # Tag each asset with its category
         portfolio_df['Category'] = portfolio_df['Ticker'].apply(get_category)
+        with st.expander("Position details", icon=":material/table_rows:"):
+            # ═══ Positions table ═══
+            display_df = portfolio_df.copy()
 
-        # ═══ Dashboard row: value chart + allocation donut ═══
-        _dash_cash = (
-            float(st.session_state.balances.get("cash_balance", 0.0) or 0.0)
-            + float(st.session_state.balances.get("credit_mutuel_balance", 0.0) or 0.0)
-            + float(st.session_state.balances.get("cic_balance", 0.0) or 0.0)
-        )
-        dash_l, dash_r = st.columns([1.9, 1])
-
-        with dash_l:
-            _dash_hist = load_portfolio_value_history()
-            if not _dash_hist.empty and len(_dash_hist) >= 2:
-                _fig_dash = go.Figure()
-                _fig_dash.add_trace(go.Scatter(
-                    x=_dash_hist['date'], y=_dash_hist['total_value'],
-                    mode="lines", name="Totale waarde",
-                    line=dict(color="#818cf8", width=2.5),
-                    fill="tozeroy", fillcolor="rgba(129,140,248,0.07)",
-                    hovertemplate="€%{y:,.0f}<extra></extra>"
-                ))
-                _fig_dash.update_layout(
-                    plot_bgcolor="#0e0f14", paper_bgcolor="#0e0f14",
-                    font=dict(family="Inter", color="#676c77", size=11),
-                    xaxis=dict(gridcolor="rgba(38,40,51,0.5)", linecolor="#262833",
-                               tickfont=dict(color="#676c77"), zeroline=False),
-                    yaxis=dict(gridcolor="rgba(38,40,51,0.5)", linecolor="#262833",
-                               tickfont=dict(color="#676c77"), zeroline=False,
-                               rangemode="tozero"),
-                    margin=dict(l=10, r=10, t=42, b=10), height=310,
-                    hovermode="x unified", showlegend=False,
-                    hoverlabel=dict(bgcolor="#16171e", bordercolor="#262833",
-                                    font=dict(family="Inter", color="#eef0f4", size=12)),
-                    title=dict(text="Portfolio waarde", x=0,
-                               font=dict(family="Space Grotesk", color="#eef0f4", size=14)),
-                )
-                st.plotly_chart(_fig_dash, use_container_width=True)
-            else:
-                st.markdown(
-                    "<div style='background:#16171e; border:1px solid #262833; border-radius:8px; "
-                    "height:310px; display:flex; align-items:center; justify-content:center; "
-                    "font-family:Inter; font-size:0.8rem; color:#676c77;'>"
-                    "Waardegrafiek verschijnt hier na een paar dagen historie</div>",
-                    unsafe_allow_html=True
-                )
-
-        with dash_r:
-            _dash_alloc = portfolio_df.groupby('Category')['Value'].sum().reset_index()
-            if _dash_cash > 0:
-                _dash_alloc = pd.concat([_dash_alloc, pd.DataFrame(
-                    [{'Category': 'Cash & Banks', 'Value': _dash_cash}]
-                )], ignore_index=True)
-            _dash_alloc = _dash_alloc[_dash_alloc['Value'] > 0]
-            _fig_donut = go.Figure(data=[go.Pie(
-                labels=_dash_alloc['Category'], values=_dash_alloc['Value'],
-                hole=0.68,
-                marker=dict(colors=[_CAT_COLORS.get(c, '#9ca0ab') for c in _dash_alloc['Category']],
-                            line=dict(color="#0e0f14", width=2)),
-                textinfo="none",
-                hovertemplate="%{label}<br>€%{value:,.0f} · %{percent}<extra></extra>",
-            )])
-            _dash_total_v = float(_dash_alloc['Value'].sum())
-            _fig_donut.update_layout(
-                paper_bgcolor="#0e0f14", plot_bgcolor="#0e0f14",
-                margin=dict(l=10, r=10, t=42, b=10), height=310,
-                title=dict(text="Allocatie", x=0,
-                           font=dict(family="Space Grotesk", color="#eef0f4", size=14)),
-                legend=dict(orientation="h", yanchor="top", y=-0.02, xanchor="center", x=0.5,
-                            font=dict(family="Inter", color="#9ca0ab", size=10),
-                            bgcolor="rgba(0,0,0,0)"),
-                annotations=[dict(
-                    text=f"<b>€{_dash_total_v:,.0f}</b>",
-                    x=0.5, y=0.5, showarrow=False,
-                    font=dict(family="Space Grotesk", size=17, color="#eef0f4"),
-                )],
+            # Per-position % return and portfolio weight
+            _inv_total_w = display_df['Value'].sum()
+            display_df['P/L %'] = display_df.apply(
+                lambda r: (r['Unrealized Profit/Loss'] / r['Cost Basis'] * 100)
+                if r['Cost Basis'] > 0 else 0.0, axis=1)
+            display_df['Weight %'] = (
+                display_df['Value'] / _inv_total_w * 100 if _inv_total_w > 0 else 0.0
             )
-            st.plotly_chart(_fig_donut, use_container_width=True)
 
-        # ═══ Positions table ═══
-        st.markdown("<h3 style='margin-top:0.3rem;'>Posities</h3>", unsafe_allow_html=True)
-        display_df = portfolio_df.copy()
+            portfolio_df_display = display_df.rename(columns={
+                "Ticker": "Asset",
+                "Category": "Type",
+                "Quantity": "Qty",
+                "Average Purchase Price": "GIP(€)",
+                "Cost Basis": "Invested(€)",
+                "Current Price": "Price(€)",
+                "Value": "Value(€)",
+                "Unrealized Profit/Loss": "Unrealized P/L (€)"
+            })
 
-        # Per-position % return and portfolio weight
-        _inv_total_w = display_df['Value'].sum()
-        display_df['P/L %'] = display_df.apply(
-            lambda r: (r['Unrealized Profit/Loss'] / r['Cost Basis'] * 100)
-            if r['Cost Basis'] > 0 else 0.0, axis=1)
-        display_df['Weight %'] = (
-            display_df['Value'] / _inv_total_w * 100 if _inv_total_w > 0 else 0.0
-        )
+            st.dataframe(
+                portfolio_df_display[["Asset","Type","Qty","GIP(€)","Invested(€)","Price(€)","Value(€)","Unrealized P/L (€)","P/L %","Weight %"]].style.format({
+                    "Qty": "{:.8f}",
+                    "GIP(€)": "€{:.4f}",
+                    "Invested(€)": "€{:.2f}",
+                    "Price(€)": "€{:.2f}",
+                    "Value(€)": "€{:.2f}",
+                    "Unrealized P/L (€)": "€{:.2f}",
+                    "P/L %": "{:+.1f}%",
+                    "Weight %": "{:.1f}%"
+                }).map(
+                    lambda v: 'color:#3DDC84' if isinstance(v, (int, float)) and v > 0
+                    else ('color:#FF6B6B' if isinstance(v, (int, float)) and v < 0 else ''),
+                    subset=['P/L %']
+                ),
+                use_container_width=True
+            )
 
-        portfolio_df_display = display_df.rename(columns={
-            "Ticker": "Asset",
-            "Category": "Type",
-            "Quantity": "Qty",
-            "Average Purchase Price": "GIP(€)",
-            "Cost Basis": "Invested(€)",
-            "Current Price": "Price(€)",
-            "Value": "Value(€)",
-            "Unrealized Profit/Loss": "Unrealized P/L (€)"
-        })
+        with st.expander("Breakdown of totals", icon=":material/calculate:"):
+            # ═══ Key metrics ═══
+            st.markdown("<div style='height:0.6rem'></div>", unsafe_allow_html=True)
+            _view = st.radio("View", ["Total Portfolio", "Investments Only"],
+                             horizontal=True, key="overview_view", label_visibility="collapsed")
 
-        st.dataframe(
-            portfolio_df_display[["Asset","Type","Qty","GIP(€)","Invested(€)","Price(€)","Value(€)","Unrealized P/L (€)","P/L %","Weight %"]].style.format({
-                "Qty": "{:.8f}",
-                "GIP(€)": "€{:.4f}",
-                "Invested(€)": "€{:.2f}",
-                "Price(€)": "€{:.2f}",
-                "Value(€)": "€{:.2f}",
-                "Unrealized P/L (€)": "€{:.2f}",
-                "P/L %": "{:+.1f}%",
-                "Weight %": "{:.1f}%"
-            }).map(
-                lambda v: 'color:#34d399' if isinstance(v, (int, float)) and v > 0
-                else ('color:#e5484d' if isinstance(v, (int, float)) and v < 0 else ''),
-                subset=['P/L %']
-            ),
-            use_container_width=True
-        )
+            investments_value = portfolio_df["Value"].sum()
+            total_invested    = portfolio_df["Cost Basis"].sum()
+            total_bank = (
+                st.session_state.balances.get("credit_mutuel_balance", 0.0)
+                + st.session_state.balances.get("cic_balance", 0.0)
+            )
+            cash_broker = st.session_state.balances.get("cash_balance", 0.0)
+            total_value = investments_value + cash_broker + total_bank
 
-        # ═══ Key metrics ═══
-        st.markdown("<div style='height:0.6rem'></div>", unsafe_allow_html=True)
-        _view = st.radio("View", ["Total Portfolio", "Investments Only"],
-                         horizontal=True, key="overview_view", label_visibility="collapsed")
-
-        investments_value = portfolio_df["Value"].sum()
-        total_invested    = portfolio_df["Cost Basis"].sum()
-        total_bank = (
-            st.session_state.balances.get("credit_mutuel_balance", 0.0)
-            + st.session_state.balances.get("cic_balance", 0.0)
-        )
-        cash_broker = st.session_state.balances.get("cash_balance", 0.0)
-        total_value = investments_value + cash_broker + total_bank
-
-        if _view == "Investments Only":
-            # P&L for investments only (excl. cash)
-            inv_pct = (total_profit / total_invested * 100) if total_invested > 0 else 0.0
-            r1c1, r1c2, r1c3 = st.columns(3)
-            r1c1.metric("Total Invested (cost basis)", f"€{total_invested:,.2f}")
-            r1c2.metric("Investments Value", f"€{investments_value:,.2f}")
-            r1c3.metric("Return on Investments", f"{inv_pct:.2f}%", delta_color="normal")
-            r2c1, r2c2, r2c3 = st.columns(3)
-            r2c1.metric("Realized Income/Expenses", f"€{realized:,.2f}", delta_color="normal")
-            r2c2.metric("Unrealized Profit/Loss", f"€{unrealized:,.2f}", delta_color="normal")
-            r2c3.metric("Total Profit", f"€{total_profit:,.2f}", delta_color="normal")
-        else:
-            r1c1, r1c2, r1c3, r1c4 = st.columns(4)
-            r1c1.metric("Total Invested", f"€{total_invested:,.2f}")
-            r1c2.metric("Total Portfolio Value", f"€{total_value:,.2f}")
-            r1c3.metric("Broker Cash", f"€{cash_broker:,.2f}")
-            r1c4.metric("Total Bank Balance", f"€{total_bank:,.2f}")
-            r2c1, r2c2, r2c3, r2c4 = st.columns(4)
-            r2c1.metric("Realized Income/Expenses", f"€{realized:,.2f}", delta_color="normal")
-            r2c2.metric("Unrealized Profit/Loss", f"€{unrealized:,.2f}", delta_color="normal")
-            r2c3.metric("Total Profit", f"€{total_profit:,.2f}", delta_color="normal")
-            r2c4.metric("Profit Percentage", f"{profit_percentage:.2f}%", delta_color="normal")
+            if _view == "Investments Only":
+                # P&L for investments only (excl. cash)
+                inv_pct = (total_profit / total_invested * 100) if total_invested > 0 else 0.0
+                r1c1, r1c2, r1c3 = st.columns(3)
+                r1c1.metric("Total Invested (cost basis)", f"€{total_invested:,.2f}")
+                r1c2.metric("Investments Value", f"€{investments_value:,.2f}")
+                r1c3.metric("Return on Investments", f"{inv_pct:.2f}%", delta_color="normal")
+                r2c1, r2c2, r2c3 = st.columns(3)
+                r2c1.metric("Realized Income/Expenses", f"€{realized:,.2f}", delta_color="normal")
+                r2c2.metric("Unrealized Profit/Loss", f"€{unrealized:,.2f}", delta_color="normal")
+                r2c3.metric("Total Profit", f"€{total_profit:,.2f}", delta_color="normal")
+            else:
+                r1c1, r1c2, r1c3, r1c4 = st.columns(4)
+                r1c1.metric("Total Invested", f"€{total_invested:,.2f}")
+                r1c2.metric("Total Portfolio Value", f"€{total_value:,.2f}")
+                r1c3.metric("Broker Cash", f"€{cash_broker:,.2f}")
+                r1c4.metric("Total Bank Balance", f"€{total_bank:,.2f}")
+                r2c1, r2c2, r2c3, r2c4 = st.columns(4)
+                r2c1.metric("Realized Income/Expenses", f"€{realized:,.2f}", delta_color="normal")
+                r2c2.metric("Unrealized Profit/Loss", f"€{unrealized:,.2f}", delta_color="normal")
+                r2c3.metric("Total Profit", f"€{total_profit:,.2f}", delta_color="normal")
+                r2c4.metric("Profit Percentage", f"{profit_percentage:.2f}%", delta_color="normal")
 
     else:
         st.warning("Portfolio is empty. Add transactions to view portfolio details.")
@@ -2434,13 +2404,13 @@ with tab_overview:
 
         st.markdown(f"""
         <div style='display:flex; gap:1.2rem; flex-wrap:wrap; margin-bottom:1.2rem;'>
-            <div style='flex:1; min-width:150px; background:#16171e; border:1px solid #262833; border-left:3px solid #818cf8; border-radius:8px; padding:0.9rem 1.1rem;'>
-                <div style='font-family:Inter; font-size:0.6rem; letter-spacing:0.12em; text-transform:uppercase; color:#676c77; margin-bottom:0.25rem;'>Total Rewards Logged</div>
-                <div style='font-family:"Space Grotesk"; font-size:1.3rem; color:#eef0f4;'>{int(rewards_summary["# Rewards"].sum())} entries</div>
+            <div style='flex:1; min-width:150px; background:#14161C; border:1px solid #1F2229; border-radius:8px; padding:0.9rem 1.1rem;'>
+                <div style='font-family:Manrope; font-size:0.78rem; color:#8D93A0; margin-bottom:0.25rem;'>Total Rewards Logged</div>
+                <div style='font-family:"Manrope"; font-size:1.3rem; color:#EDEFF3;'>{int(rewards_summary["# Rewards"].sum())} entries</div>
             </div>
-            <div style='flex:1; min-width:150px; background:#16171e; border:1px solid #262833; border-left:3px solid #34d399; border-radius:8px; padding:0.9rem 1.1rem;'>
-                <div style='font-family:Inter; font-size:0.6rem; letter-spacing:0.12em; text-transform:uppercase; color:#676c77; margin-bottom:0.25rem;'>Current Value (pure gain)</div>
-                <div style='font-family:"Space Grotesk"; font-size:1.3rem; color:#34d399;'>€{total_rewards_current:,.2f}</div>
+            <div style='flex:1; min-width:150px; background:#14161C; border:1px solid #1F2229; border-radius:8px; padding:0.9rem 1.1rem;'>
+                <div style='font-family:Manrope; font-size:0.78rem; color:#8D93A0; margin-bottom:0.25rem;'>Current Value (pure gain)</div>
+                <div style='font-family:"Manrope"; font-size:1.3rem; color:#3DDC84;'>€{total_rewards_current:,.2f}</div>
             </div>
         </div>
         """, unsafe_allow_html=True)
@@ -2510,8 +2480,7 @@ with tab_overview:
 # -------------------------
 # Tab: Asset Allocation
 # -------------------------
-with tab_allocation:
-    st.markdown("<h2><span class='material-symbols-outlined' style='font-size:20px;'>donut_large</span> Asset Allocation</h2>", unsafe_allow_html=True)
+if _page == "Allocation":
 
     # ── Build category-aware allocation data ──
     cash_broker = float(st.session_state.balances.get("cash_balance", 0.0) or 0.0)
@@ -2554,7 +2523,7 @@ with tab_allocation:
         cat_order  = ['ETF', 'Stock', 'Crypto', 'Cash & Banks']
         chart_df['sort'] = chart_df['Category'].apply(lambda c: cat_order.index(c) if c in cat_order else 99)
         chart_df = chart_df.sort_values('sort').drop('sort', axis=1)
-        chart_colors = [_CAT_COLORS.get(c, '#9ca0ab') for c in chart_df['Category']]
+        chart_colors = [_CAT_COLORS.get(c, '#A4A9B4') for c in chart_df['Category']]
 
         col1, col2 = st.columns([2.2, 1])
         with col1:
@@ -2562,22 +2531,22 @@ with tab_allocation:
                 labels=chart_df['Category'],
                 values=chart_df['Value'],
                 hole=0.55,
-                marker=dict(colors=chart_colors, line=dict(color="#0e0f14", width=2)),
+                marker=dict(colors=chart_colors, line=dict(color="#0C0D10", width=2)),
                 textposition="outside",
                 textinfo="label+percent",
-                textfont=dict(family="Inter", size=11, color="#9ca0ab"),
+                textfont=dict(family="Manrope", size=11, color="#A4A9B4"),
                 hovertemplate="%{label}<br>€%{value:,.2f}<br>%{percent}<extra></extra>",
                 pull=[0.02] * len(chart_df),
             )])
             fig.update_layout(
                 showlegend=False,
                 margin=dict(l=20, r=20, t=40, b=20),
-                font=dict(family="Inter", size=12, color="#676c77"),
-                paper_bgcolor="#0e0f14", plot_bgcolor="#0e0f14",
+                font=dict(family="Manrope", size=12, color="#8D93A0"),
+                paper_bgcolor="#0C0D10", plot_bgcolor="#0C0D10",
                 height=480,
                 annotations=[dict(
-                    text=f"<b>€{total_value:,.0f}</b><br><span style='font-size:10px;color:#676c77;'>NET WORTH</span>",
-                    x=0.5, y=0.5, font=dict(family="Space Grotesk", size=22, color="#eef0f4"),
+                    text=f"<b>€{total_value:,.0f}</b><br><span style='font-size:10px;color:#8D93A0;'>NET WORTH</span>",
+                    x=0.5, y=0.5, font=dict(family="Manrope", size=22, color="#EDEFF3"),
                     showarrow=False, align="center"
                 )]
             )
@@ -2585,27 +2554,27 @@ with tab_allocation:
 
         with col2:
             def _breakdown_row(label, value, pct, color, border=True):
-                border_style = "border-bottom:1px solid #262833;" if border else ""
+                border_style = "border-bottom:1px solid #1F2229;" if border else ""
                 return (
                     f"<div style='display:flex; justify-content:space-between; align-items:center; {border_style} padding:0.65rem 0;'>"
-                    f"<span style='color:#9ca0ab; display:flex; align-items:center; gap:0.5rem;'>"
+                    f"<span style='color:#A4A9B4; display:flex; align-items:center; gap:0.5rem;'>"
                     f"<span style='width:8px; height:8px; border-radius:2px; background:{color}; display:inline-block;'></span>{label}</span>"
                     f"<div style='text-align:right;'>"
-                    f"<div style='font-family:Space Grotesk; font-size:1rem; color:#eef0f4;'>{pct:.1f}%</div>"
-                    f"<div style='font-family:Inter; font-size:0.65rem; color:#676c77;'>€{value:,.0f}</div>"
+                    f"<div style='font-family:Manrope; font-size:1rem; color:#EDEFF3;'>{pct:.1f}%</div>"
+                    f"<div style='font-family:Manrope; font-size:0.78rem; color:#8D93A0;'>€{value:,.0f}</div>"
                     f"</div></div>"
                 )
             breakdown_html = (
                 "<div style='height:480px; display:flex; align-items:center; justify-content:center;'>"
                 "<div style='width:100%; padding-left:12px;'>"
-                "<div style='font-family:Inter; font-size:0.6rem; text-transform:uppercase; letter-spacing:0.14em; color:#676c77; font-weight:600; margin-bottom:1.2rem;'>Category Breakdown</div>"
-                + _breakdown_row("ETF",          etf_value,    pct_etf,    "#34d399")
-                + _breakdown_row("Individual Stock", stock_value, pct_stock, "#60a5fa")
-                + _breakdown_row("Crypto",        crypto_value, pct_crypto, "#818cf8")
-                + _breakdown_row("Cash & Banks",  cash_value,   pct_cash,   "#676c77", border=False)
-                + f"<div style='margin-top:1.2rem; padding-top:0.8rem; border-top:1px solid rgba(129,140,248,0.3);'>"
-                f"<div style='font-family:Inter; font-size:0.6rem; text-transform:uppercase; letter-spacing:0.14em; color:#676c77; margin-bottom:0.3rem;'>Total Net Worth</div>"
-                f"<div style='font-family:Space Grotesk; font-size:1.5rem; color:#818cf8; letter-spacing:0.03em;'>€{total_value:,.2f}</div>"
+                "<div style='font-family:Manrope; font-size:0.78rem; color:#8D93A0; font-weight:600; margin-bottom:1.2rem;'>Category Breakdown</div>"
+                + _breakdown_row("ETF",          etf_value,    pct_etf,    _CAT_COLORS['ETF'])
+                + _breakdown_row("Individual Stock", stock_value, pct_stock, _CAT_COLORS['Stock'])
+                + _breakdown_row("Crypto",        crypto_value, pct_crypto, _CAT_COLORS['Crypto'])
+                + _breakdown_row("Cash & Banks",  cash_value,   pct_cash,   _CAT_COLORS['Cash & Banks'], border=False)
+                + f"<div style='margin-top:1.2rem; padding-top:0.8rem; border-top:1px solid rgba(77,124,254,0.3);'>"
+                f"<div style='font-family:Manrope; font-size:0.78rem; color:#8D93A0; margin-bottom:0.3rem;'>Total Net Worth</div>"
+                f"<div style='font-family:Manrope; font-size:1.5rem; color:#4D7CFE; letter-spacing:0.03em;'>€{total_value:,.2f}</div>"
                 f"</div></div></div>"
             )
             st.markdown(breakdown_html, unsafe_allow_html=True)
@@ -2613,7 +2582,7 @@ with tab_allocation:
         # ── Category Overrides ──
         st.markdown("---")
         st.markdown("<h2><span class='material-symbols-outlined' style='font-size:20px;'>category</span> Asset Category Overrides</h2>", unsafe_allow_html=True)
-        st.markdown("<p style='font-family:Inter; font-size:0.8rem; color:#9ca0ab; margin-bottom:0.75rem;'>Auto-detected categories based on ticker. Override if incorrect.</p>", unsafe_allow_html=True)
+        st.markdown("<p style='font-family:Manrope; font-size:0.8rem; color:#A4A9B4; margin-bottom:0.75rem;'>Auto-detected categories based on ticker. Override if incorrect.</p>", unsafe_allow_html=True)
 
         if not portfolio_df.empty:
             for _, asset_row in portfolio_df.iterrows():
@@ -2621,8 +2590,8 @@ with tab_allocation:
                 detected = auto_detect_category(tk)
                 current_cat = get_category(tk)
                 ov_col1, ov_col2, ov_col3 = st.columns([2, 2, 1])
-                ov_col1.markdown(f"<div style='padding:0.45rem 0; font-family:Inter; font-size:0.85rem; color:#eef0f4;'>{tk}</div>", unsafe_allow_html=True)
-                ov_col2.markdown(f"<div style='padding:0.45rem 0; font-family:Inter; font-size:0.75rem; color:#676c77;'>Auto: {detected}</div>", unsafe_allow_html=True)
+                ov_col1.markdown(f"<div style='padding:0.45rem 0; font-family:Manrope; font-size:0.85rem; color:#EDEFF3;'>{tk}</div>", unsafe_allow_html=True)
+                ov_col2.markdown(f"<div style='padding:0.45rem 0; font-family:Manrope; font-size:0.75rem; color:#8D93A0;'>Auto: {detected}</div>", unsafe_allow_html=True)
                 new_cat = ov_col3.selectbox("", ['ETF', 'Stock', 'Crypto'],
                     index=['ETF','Stock','Crypto'].index(current_cat) if current_cat in ['ETF','Stock','Crypto'] else 1,
                     key=f"cat_{tk}", label_visibility="collapsed")
@@ -2645,14 +2614,14 @@ with tab_allocation:
             ))
         buffer_6m = monthly_expenses * 6
 
-        st.markdown("<p style='font-family:Inter; font-size:0.78rem; color:#9ca0ab; margin-bottom:0.75rem;'>"
-                    "Target split of your <b style='color:#eef0f4;'>total</b> (cash + investments). "
+        st.markdown("<p style='font-family:Manrope; font-size:0.78rem; color:#A4A9B4; margin-bottom:0.75rem;'>"
+                    "Target split of your <b style='color:#EDEFF3;'>total</b> (cash + investments). "
                     "The four must add up to 100%.</p>", unsafe_allow_html=True)
 
         _keys   = ['Cash', 'ETF', 'Stock', 'Crypto']
         _tkeys  = {'Cash': 'cash_pct', 'ETF': 'etf_pct', 'Stock': 'stocks_pct', 'Crypto': 'crypto_pct'}
         _labels = {'Cash': 'Cash & Banks', 'ETF': 'ETFs', 'Stock': 'Stocks', 'Crypto': 'Crypto'}
-        _colors = {'Cash': '#676c77', 'ETF': '#34d399', 'Stock': '#60a5fa', 'Crypto': '#818cf8'}
+        _colors = {'Cash': '#5B6170', 'ETF': '#4D7CFE', 'Stock': '#22C3B5', 'Crypto': '#F5A623'}
 
         tcols = st.columns(5)
         _tgt_split = {}
@@ -2668,12 +2637,12 @@ with tab_allocation:
 
         _tgt_sum = sum(_tgt_split.values())
         _cash_tgt_eur = total_value * _tgt_split['Cash'] / 100
-        _hint = (f"Your cash target is <b style='color:#eef0f4;'>€{_cash_tgt_eur:,.0f}</b> "
+        _hint = (f"Your cash target is <b style='color:#EDEFF3;'>€{_cash_tgt_eur:,.0f}</b> "
                  f"= {(_cash_tgt_eur / monthly_expenses if monthly_expenses else 0):.1f} months of expenses "
                  f"(€{monthly_expenses:,.0f}/month from Cashflow).")
         if monthly_expenses and _cash_tgt_eur < buffer_6m:
             _hint += (f" <span style='color:#f5a524;'>That's below a 6-month buffer (€{buffer_6m:,.0f}).</span>")
-        st.markdown(f"<p style='font-family:Inter; font-size:0.78rem; color:#9ca0ab;'>{_hint}</p>",
+        st.markdown(f"<p style='font-family:Manrope; font-size:0.78rem; color:#A4A9B4;'>{_hint}</p>",
                     unsafe_allow_html=True)
 
         if abs(_tgt_sum - 100) > 0.5:
@@ -2694,23 +2663,23 @@ with tab_allocation:
         def _rebal_card(col, key, current, target_val, diff, subtitle):
             is_cash = key == 'Cash'
             if abs(diff) <= 1:
-                action, action_col = "✓  OK", "#676c77"
+                action, action_col = "✓  OK", "#8D93A0"
             elif diff > 0:
                 action = f"ADD  €{diff:,.0f}" if is_cash else f"BUY  €{diff:,.0f}"
-                action_col = "#34d399"
+                action_col = "#3DDC84"
             elif is_cash:
-                action, action_col = f"SURPLUS  €{-diff:,.0f}", "#9ca0ab"
+                action, action_col = f"SURPLUS  €{-diff:,.0f}", "#A4A9B4"
             elif allow_selling:
-                action, action_col = f"SELL  €{-diff:,.0f}", "#e5484d"
+                action, action_col = f"SELL  €{-diff:,.0f}", "#FF6B6B"
             else:
                 action, action_col = f"PAUSE  (+€{-diff:,.0f})", "#f5a524"
             pct_now = current / total_value * 100 if total_value > 0 else 0
             col.markdown(
-                f"<div style='background:#16171e; border:1px solid #262833; border-left:3px solid {_colors[key]}; border-radius:8px; padding:1rem 1.2rem;'>"
-                f"<div style='font-family:Inter; font-size:0.6rem; text-transform:uppercase; letter-spacing:0.12em; color:#676c77; margin-bottom:0.3rem;'>{_labels[key]}</div>"
-                f"<div style='font-family:Inter; font-size:0.78rem; color:#eef0f4; margin-bottom:0.1rem;'>Now: <b>€{current:,.0f}</b> &nbsp;·&nbsp; {pct_now:.0f}%</div>"
-                f"<div style='font-family:Inter; font-size:0.72rem; color:#9ca0ab; margin-bottom:0.45rem;'>Target: €{target_val:,.0f} {subtitle}</div>"
-                f"<div style='font-family:Space Grotesk, sans-serif; font-size:1.3rem; color:{action_col}; letter-spacing:0.03em;'>{action}</div>"
+                f"<div style='background:#14161C; border:1px solid #1F2229; border-radius:8px; padding:1rem 1.2rem;'>"
+                f"<div style='font-family:Manrope; font-size:0.78rem; color:#8D93A0; margin-bottom:0.3rem;'>{_labels[key]}</div>"
+                f"<div style='font-family:Manrope; font-size:0.78rem; color:#EDEFF3; margin-bottom:0.1rem;'>Now: <b>€{current:,.0f}</b> &nbsp;·&nbsp; {pct_now:.0f}%</div>"
+                f"<div style='font-family:Manrope; font-size:0.72rem; color:#A4A9B4; margin-bottom:0.45rem;'>Target: €{target_val:,.0f} {subtitle}</div>"
+                f"<div style='font-family:Manrope, sans-serif; font-size:1.3rem; color:{action_col}; letter-spacing:0.03em;'>{action}</div>"
                 f"</div>",
                 unsafe_allow_html=True
             )
@@ -2730,9 +2699,9 @@ with tab_allocation:
             elif _need <= 1:
                 _need_txt = "You're on target — split new money by the target percentages."
             else:
-                _need_txt = (f"Without selling, about <b style='color:#eef0f4;'>€{_need:,.0f}</b> of new money "
+                _need_txt = (f"Without selling, about <b style='color:#EDEFF3;'>€{_need:,.0f}</b> of new money "
                              f"(into the underweight categories) brings everything back to target at today's prices.")
-            st.markdown(f"<p style='font-family:Inter; font-size:0.8rem; color:#9ca0ab;'>{_need_txt}</p>",
+            st.markdown(f"<p style='font-family:Manrope; font-size:0.8rem; color:#A4A9B4;'>{_need_txt}</p>",
                         unsafe_allow_html=True)
             _dep = st.number_input("New money this month (€)", min_value=0.0, value=500.0, step=50.0,
                                    format="%.0f", key="next_deposit_amt")
@@ -2742,10 +2711,10 @@ with tab_allocation:
                 _after = (_cur_split[_k] + _plan[_k]) / (total_value + _dep) * 100 if (total_value + _dep) > 0 else 0
                 _verb = "Keep as cash" if _k == 'Cash' else "Invest"
                 _pc[_i].markdown(
-                    f"<div style='background:#16171e; border:1px solid #262833; border-left:3px solid {_colors[_k]}; border-radius:8px; padding:0.8rem 1.1rem;'>"
-                    f"<div style='font-family:Inter; font-size:0.6rem; text-transform:uppercase; letter-spacing:0.12em; color:#676c77;'>{_labels[_k]} · {_verb}</div>"
-                    f"<div style='font-family:Space Grotesk, sans-serif; font-size:1.3rem; color:#eef0f4;'>€{_plan[_k]:,.0f}</div>"
-                    f"<div style='font-family:Inter; font-size:0.7rem; color:#9ca0ab;'>→ {_after:.0f}% after (target {_tgt_split[_k]:.0f}%)</div>"
+                    f"<div style='background:#14161C; border:1px solid #1F2229; border-radius:8px; padding:0.8rem 1.1rem;'>"
+                    f"<div style='font-family:Manrope; font-size:0.78rem; color:#8D93A0;'>{_labels[_k]} · {_verb}</div>"
+                    f"<div style='font-family:Manrope, sans-serif; font-size:1.3rem; color:#EDEFF3;'>€{_plan[_k]:,.0f}</div>"
+                    f"<div style='font-family:Manrope; font-size:0.7rem; color:#A4A9B4;'>→ {_after:.0f}% after (target {_tgt_split[_k]:.0f}%)</div>"
                     f"</div>", unsafe_allow_html=True)
 
         st.markdown("<div style='height:1rem'></div>", unsafe_allow_html=True)
@@ -2754,8 +2723,8 @@ with tab_allocation:
         if not portfolio_df.empty and investments_value > 0:
             st.markdown("<h3>Concentration Check</h3>", unsafe_allow_html=True)
             st.markdown(
-                f"<p style='font-family:Inter; font-size:0.78rem; color:#9ca0ab; margin-bottom:0.75rem;'>"
-                f"Max allowed per individual stock or crypto: <b style='color:#818cf8;'>{max_single_pct:.1f}%</b> "
+                f"<p style='font-family:Manrope; font-size:0.78rem; color:#A4A9B4; margin-bottom:0.75rem;'>"
+                f"Max allowed per individual stock or crypto: <b style='color:#4D7CFE;'>{max_single_pct:.1f}%</b> "
                 f"of investments (= €{investments_value * max_single_pct / 100:,.0f})</p>",
                 unsafe_allow_html=True
             )
@@ -2782,7 +2751,7 @@ with tab_allocation:
                     conc_df.style
                     .format({'Value (€)': '€{:.2f}', '% of Investments': '{:.1f}%',
                              'Limit (€)': '€{:.2f}', 'Over limit (€)': '€{:.2f}'})
-                    .map(lambda v: 'color:#e5484d' if isinstance(v, str) and '⚠' in v else '',
+                    .map(lambda v: 'color:#FF6B6B' if isinstance(v, str) and '⚠' in v else '',
                          subset=['Status']),
                     use_container_width=True
                 )
@@ -2790,8 +2759,7 @@ with tab_allocation:
 # -------------------------
 # Tab: Historical Price Charts
 # -------------------------
-with tab_charts:
-    st.markdown("<h2><span class='material-symbols-outlined' style='font-size:20px;'>candlestick_chart</span> Price Charts</h2>", unsafe_allow_html=True)
+if _page == "Charts":
     if not portfolio_df.empty:
         selected_ticker = st.selectbox("Select a Ticker for Historical Chart", options=portfolio_df['Ticker'].tolist(), key="hist_ticker")
         period = st.selectbox("Time Period", options=['6mo', '1y', '2y', '5y', 'max'], key="hist_period")
@@ -2805,14 +2773,14 @@ with tab_charts:
 
                 fig = px.line(hist_data, x='Date', y='Close', title=f"{selected_ticker} — {period}",
                               labels={'Close': 'Price (EUR)', 'Date': ''},
-                              color_discrete_sequence=["#818cf8"])
+                              color_discrete_sequence=["#4D7CFE"])
                 fig.update_traces(line=dict(width=2.5))
-                fig.add_hline(y=avg_purchase, line_dash="dash", line_color="rgba(129,140,248,0.5)",
+                fig.add_hline(y=avg_purchase, line_dash="dash", line_color="rgba(77,124,254,0.5)",
                               annotation_text=f"Avg: €{avg_purchase:.2f}",
                               annotation_position="top left",
-                              annotation_font=dict(family="Inter", color="#818cf8", size=11))
+                              annotation_font=dict(family="Manrope", color="#4D7CFE", size=11))
                 fig.update_layout(
-                    title=dict(font=dict(family="Space Grotesk", color="#eef0f4", size=15), x=0),
+                    title=dict(font=dict(family="Manrope", color="#EDEFF3", size=15), x=0),
                     xaxis_title="", yaxis_title="Price (EUR)",
                     **_CHART_LAYOUT
                 )
@@ -2840,8 +2808,7 @@ with tab_charts:
 # -------------------------
 # Tab: Planning
 # -------------------------
-with tab_planning:
-    st.markdown("<h2><span class='material-symbols-outlined' style='font-size:20px;'>rocket_launch</span> Planning</h2>", unsafe_allow_html=True)
+if _page == "Planning":
 
     plan = st.session_state.planning_settings
 
@@ -2860,7 +2827,7 @@ with tab_planning:
     # ── Settings (auto-saved on change — no button needed) ──
     st.markdown(
         "<h3 style='display:inline;'>Your Settings</h3>"
-        "<span style='font-family:Inter; font-size:0.7rem; color:#676c77; margin-left:0.8rem;'>auto-saved</span>",
+        "<span style='font-family:Manrope; font-size:0.7rem; color:#8D93A0; margin-left:0.8rem;'>auto-saved</span>",
         unsafe_allow_html=True
     )
     pc1, pc2, pc3, pc4 = st.columns(4)
@@ -2948,15 +2915,15 @@ with tab_planning:
         hours_investment      = work_for_investment / hourly_rate if hourly_rate > 0 else 0.0
 
         # ── Progress bar ──
-        _pg_col = "#34d399" if progress >= 80 else "#818cf8" if progress >= 40 else "#e5484d"
+        _pg_col = "#3DDC84" if progress >= 80 else "#4D7CFE" if progress >= 40 else "#FF6B6B"
         st.markdown(
             f"<div style='margin-bottom:1.5rem;'>"
-            f"<div style='display:flex; justify-content:space-between; font-family:Inter; font-size:0.72rem; color:#9ca0ab; margin-bottom:0.4rem;'>"
+            f"<div style='display:flex; justify-content:space-between; font-family:Manrope; font-size:0.72rem; color:#A4A9B4; margin-bottom:0.4rem;'>"
             f"<span>Net Worth Progress</span><span style='color:{_pg_col};'>{progress:.1f}%</span></div>"
-            f"<div style='background:#262833; border-radius:4px; height:10px;'>"
+            f"<div style='background:#1F2229; border-radius:4px; height:10px;'>"
             f"<div style='background:{_pg_col}; width:{progress:.1f}%; height:10px; border-radius:4px; transition:width 0.3s;'></div>"
             f"</div>"
-            f"<div style='display:flex; justify-content:space-between; font-family:Inter; font-size:0.68rem; color:#676c77; margin-top:0.3rem;'>"
+            f"<div style='display:flex; justify-content:space-between; font-family:Manrope; font-size:0.68rem; color:#8D93A0; margin-top:0.3rem;'>"
             f"<span>€{current_nw:,.0f} now</span><span>€{goal_amount:,.0f} goal</span></div>"
             f"</div>",
             unsafe_allow_html=True
@@ -2975,23 +2942,23 @@ with tab_planning:
         if other_monthly_income > 0 or monthly_expenses > 0:
             net_after_income = other_monthly_income - monthly_expenses  # positive = surplus
             if other_monthly_income >= monthly_expenses:
-                _exp_tag  = f"<span style='color:#34d399;'>✓ €{monthly_expenses:,.0f} expenses fully covered</span>"
+                _exp_tag  = f"<span style='color:#3DDC84;'>✓ €{monthly_expenses:,.0f} expenses fully covered</span>"
                 _surplus  = other_monthly_income - monthly_expenses
                 _inv_tag  = (
-                    f"<span style='color:#34d399;'>+ €{_surplus:,.0f} toward investments</span>"
+                    f"<span style='color:#3DDC84;'>+ €{_surplus:,.0f} toward investments</span>"
                     if _surplus > 0 else ""
                 )
             else:
                 _exp_tag = (
-                    f"<span style='color:#818cf8;'>€{covered_expenses:,.0f} of €{monthly_expenses:,.0f} expenses "
+                    f"<span style='color:#4D7CFE;'>€{covered_expenses:,.0f} of €{monthly_expenses:,.0f} expenses "
                     f"(€{work_for_expenses:,.0f} still needs work)</span>"
                 )
                 _inv_tag = ""
             st.markdown(
-                f"<div style='background:#16171e; border:1px solid #262833; border-radius:8px; "
-                f"padding:0.8rem 1.1rem; margin:0.5rem 0 0.2rem; font-family:Inter; font-size:0.78rem;'>"
-                f"<span style='color:#676c77; text-transform:uppercase; letter-spacing:0.1em; font-size:0.62rem;'>Your other income (€{other_monthly_income:,.0f}/mo) covers →</span><br>"
-                f"<span style='color:#9ca0ab;'>{_exp_tag}"
+                f"<div style='background:#14161C; border:1px solid #1F2229; border-radius:8px; "
+                f"padding:0.8rem 1.1rem; margin:0.5rem 0 0.2rem; font-family:Manrope; font-size:0.78rem;'>"
+                f"<span style='color:#8D93A0; font-size:0.62rem;'>Your other income (€{other_monthly_income:,.0f}/mo) covers →</span><br>"
+                f"<span style='color:#A4A9B4;'>{_exp_tag}"
                 f"{('&nbsp;&nbsp;·&nbsp;&nbsp;' + _inv_tag) if _inv_tag else ''}</span>"
                 f"</div>",
                 unsafe_allow_html=True
@@ -3029,24 +2996,24 @@ with tab_planning:
         _fig_proj.add_trace(go.Scatter(
             x=_proj_dates, y=_proj_with, mode="lines",
             name=f"Met €{monthly_invest_needed:,.0f}/mo inleg",
-            line=dict(color="#818cf8", width=2.5),
+            line=dict(color="#4D7CFE", width=2.5),
             hovertemplate="€%{y:,.0f}<extra>Met inleg</extra>"
         ))
         _fig_proj.add_trace(go.Scatter(
             x=_proj_dates, y=_proj_without, mode="lines",
             name="Zonder extra inleg",
-            line=dict(color="#9ca0ab", width=2, dash="dot"),
+            line=dict(color="#A4A9B4", width=2, dash="dot"),
             hovertemplate="€%{y:,.0f}<extra>Zonder inleg</extra>"
         ))
         _fig_proj.add_hline(
-            y=goal_amount, line_dash="dash", line_color="#34d399",
+            y=goal_amount, line_dash="dash", line_color="#3DDC84",
             annotation_text=f"Doel €{goal_amount:,.0f}",
             annotation_position="top left",
-            annotation_font=dict(family="Inter", color="#34d399", size=11)
+            annotation_font=dict(family="Manrope", color="#3DDC84", size=11)
         )
         _fig_proj.update_layout(
             title=dict(text="Verwacht vermogen tot je doeldatum",
-                       font=dict(family="Space Grotesk", color="#eef0f4", size=15), x=0),
+                       font=dict(family="Manrope", color="#EDEFF3", size=15), x=0),
             yaxis_title="Net worth (€)",
             **_CHART_LAYOUT
         )
@@ -3064,21 +3031,21 @@ with tab_planning:
             days = hours / 8
             if covered:
                 col.markdown(
-                    f"<div style='background:#16171e; border:1px solid #262833; border-left:3px solid #34d399; border-radius:8px; padding:1rem 1.2rem;'>"
-                    f"<div style='font-family:Inter; font-size:0.6rem; text-transform:uppercase; letter-spacing:0.12em; color:#676c77; margin-bottom:0.3rem;'>{label}</div>"
-                    f"<div style='font-family:Space Grotesk, sans-serif; font-size:1.6rem; color:#34d399; letter-spacing:0.03em;'>Covered ✓</div>"
-                    f"<div style='font-family:Inter; font-size:0.75rem; color:#9ca0ab; margin-top:0.1rem;'>€{euros:,.0f} by other income</div>"
-                    f"{'<div style=\"font-family:Inter; font-size:0.68rem; color:#676c77; margin-top:0.2rem;\">' + detail + '</div>' if detail else ''}"
+                    f"<div style='background:#14161C; border:1px solid #1F2229; border-radius:8px; padding:1rem 1.2rem;'>"
+                    f"<div style='font-family:Manrope; font-size:0.78rem; color:#8D93A0; margin-bottom:0.3rem;'>{label}</div>"
+                    f"<div style='font-family:Manrope, sans-serif; font-size:1.6rem; color:#3DDC84; letter-spacing:0.03em;'>Covered ✓</div>"
+                    f"<div style='font-family:Manrope; font-size:0.75rem; color:#A4A9B4; margin-top:0.1rem;'>€{euros:,.0f} by other income</div>"
+                    f"{'<div style=\"font-family:Manrope; font-size:0.68rem; color:#8D93A0; margin-top:0.2rem;\">' + detail + '</div>' if detail else ''}"
                     f"</div>",
                     unsafe_allow_html=True
                 )
             else:
                 col.markdown(
-                    f"<div style='background:#16171e; border:1px solid #262833; border-left:3px solid {border_color}; border-radius:8px; padding:1rem 1.2rem;'>"
-                    f"<div style='font-family:Inter; font-size:0.6rem; text-transform:uppercase; letter-spacing:0.12em; color:#676c77; margin-bottom:0.3rem;'>{label}</div>"
-                    f"<div style='font-family:Space Grotesk, sans-serif; font-size:1.6rem; color:#eef0f4; letter-spacing:0.03em;'>{hours:.0f} hrs</div>"
-                    f"<div style='font-family:Inter; font-size:0.75rem; color:#9ca0ab; margin-top:0.1rem;'>≈ {days:.1f} days &nbsp;·&nbsp; €{euros:,.0f}</div>"
-                    f"{'<div style=\"font-family:Inter; font-size:0.68rem; color:#676c77; margin-top:0.2rem;\">' + detail + '</div>' if detail else ''}"
+                    f"<div style='background:#14161C; border:1px solid #1F2229; border-radius:8px; padding:1rem 1.2rem;'>"
+                    f"<div style='font-family:Manrope; font-size:0.78rem; color:#8D93A0; margin-bottom:0.3rem;'>{label}</div>"
+                    f"<div style='font-family:Manrope, sans-serif; font-size:1.6rem; color:#EDEFF3; letter-spacing:0.03em;'>{hours:.0f} hrs</div>"
+                    f"<div style='font-family:Manrope; font-size:0.75rem; color:#A4A9B4; margin-top:0.1rem;'>≈ {days:.1f} days &nbsp;·&nbsp; €{euros:,.0f}</div>"
+                    f"{'<div style=\"font-family:Manrope; font-size:0.68rem; color:#8D93A0; margin-top:0.2rem;\">' + detail + '</div>' if detail else ''}"
                     f"</div>",
                     unsafe_allow_html=True
                 )
@@ -3093,35 +3060,35 @@ with tab_planning:
         # Expenses card
         if work_for_expenses == 0 and monthly_expenses > 0:
             _hour_card(h1, "Monthly expenses", hours_expenses,
-                       monthly_expenses, "#34d399",
+                       monthly_expenses, "#3DDC84",
                        f"Paid by your €{other_monthly_income:,.0f} other income", covered=True)
         else:
             _hour_card(h1, "For expenses (from work)", hours_expenses,
-                       work_for_expenses, "#e5484d",
+                       work_for_expenses, "#FF6B6B",
                        f"€{covered_expenses:,.0f} covered by income · €{work_for_expenses:,.0f} gap")
 
         # Loan repayment card (only if loans exist)
         if h4 is not None:
             if work_for_repay == 0:
                 _hour_card(h2, "Loan repayments", 0,
-                           _plan_repay, "#34d399",
+                           _plan_repay, "#3DDC84",
                            f"€{_plan_repay:,.0f}/mo covered by other income", covered=True)
             else:
                 _hour_card(h2, "Loan repayments (from work)", hours_repay,
-                           work_for_repay, "#e5484d",
+                           work_for_repay, "#FF6B6B",
                            f"€{_plan_repay:,.0f}/mo across {len(st.session_state.loans)} loan(s)")
             _hour_card(h3, "For investment (from work)", hours_investment,
-                       work_for_investment, "#34d399",
+                       work_for_investment, "#3DDC84",
                        f"€{monthly_invest_needed:,.0f} needed · {expected_return:.1f}% return assumed")
             _hour_card(h4, "Total work hours needed", hours_total,
-                       work_income_needed, "#818cf8",
+                       work_income_needed, "#4D7CFE",
                        f"€{hourly_rate:.0f}/hr × {hours_total:.0f} hrs = €{work_income_needed:,.0f}")
         else:
             _hour_card(h2, "For investment (from work)", hours_investment,
-                       work_for_investment, "#34d399",
+                       work_for_investment, "#3DDC84",
                        f"€{monthly_invest_needed:,.0f} needed · {expected_return:.1f}% return assumed")
             _hour_card(h3, "Total work hours needed", hours_total,
-                       work_income_needed, "#818cf8",
+                       work_income_needed, "#4D7CFE",
                        f"€{hourly_rate:.0f}/hr × {hours_total:.0f} hrs = €{work_income_needed:,.0f}")
 
         # ── Active loans detail (if any) ──
@@ -3207,7 +3174,7 @@ with tab_planning:
             st.markdown("---")
             st.markdown("<h3>Leverage Analysis</h3>", unsafe_allow_html=True)
             st.markdown(
-                "<p style='font-family:Inter; font-size:0.8rem; color:#9ca0ab; margin-bottom:1rem;'>"
+                "<p style='font-family:Manrope; font-size:0.8rem; color:#A4A9B4; margin-bottom:1rem;'>"
                 "Is het rendabel om geleend geld te beleggen? "
                 "Je portfolio moet meer opleveren dan de rente die je betaalt.</p>",
                 unsafe_allow_html=True
@@ -3249,15 +3216,15 @@ with tab_planning:
                 _net_annual = _annual_gain - _annual_interest
                 _spread     = _ann_pct - _rate
                 _profitable = _spread > 0
-                _status_col = "#34d399" if _profitable else "#e5484d"
+                _status_col = "#3DDC84" if _profitable else "#FF6B6B"
                 _status_ico = "✓" if _profitable else "✗"
                 _spread_sign = "+" if _spread >= 0 else ""
 
                 # Card header
                 _ltype_label = "studentenlening" if _ltype_l == 'student' else "lening"
                 st.markdown(
-                    f"<div style='font-family:Inter; font-size:0.65rem; text-transform:uppercase; "
-                    f"letter-spacing:0.1em; color:#676c77; margin-bottom:0.5rem;'>"
+                    f"<div style='font-family:Manrope; font-size:0.78rem; "
+                    f"color:#8D93A0; margin-bottom:0.5rem;'>"
                     f"{_lr['Name']} &nbsp;·&nbsp; €{_principal:,.0f} {_ltype_label} @ {_rate:.2f}%</div>",
                     unsafe_allow_html=True
                 )
@@ -3290,27 +3257,27 @@ with tab_planning:
                 # Verdict bar
                 if _ann_pct == 0:
                     _verdict = "Nog geen portfolio data beschikbaar voor berekening."
-                    _verdict_col = "#676c77"
+                    _verdict_col = "#8D93A0"
                 elif _profitable:
                     _verdict = (
                         f"{_status_ico} Winstgevend — je portfolio ({_ann_pct:.1f}%) "
                         f"rendert {_spread:.1f}% meer dan de rente ({_rate:.2f}%). "
                         f"Netto winst: €{_net_annual:,.0f}/jaar."
                     )
-                    _verdict_col = "#34d399"
+                    _verdict_col = "#3DDC84"
                 else:
                     _verdict = (
                         f"{_status_ico} Niet winstgevend — je portfolio ({_ann_pct:.1f}%) "
                         f"rendert {abs(_spread):.1f}% minder dan de rente ({_rate:.2f}%). "
                         f"Je verliest €{abs(_net_annual):,.0f}/jaar door deze lening."
                     )
-                    _verdict_col = "#e5484d"
+                    _verdict_col = "#FF6B6B"
 
                 st.markdown(
-                    f"<div style='background:#16171e; border:1px solid #262833; "
-                    f"border-left:3px solid {_verdict_col}; border-radius:8px; "
+                    f"<div style='background:#14161C; border:1px solid #1F2229; "
+                    f"border-radius:8px; "
                     f"padding:0.7rem 1rem; margin:0.4rem 0 1.2rem; "
-                    f"font-family:Inter; font-size:0.78rem; color:{_verdict_col};'>"
+                    f"font-family:Manrope; font-size:0.78rem; color:{_verdict_col};'>"
                     f"{_verdict}</div>",
                     unsafe_allow_html=True
                 )
@@ -3321,13 +3288,13 @@ with tab_planning:
                 _total_interest_y = _sum_interest_y
                 _total_gain_y     = _sum_gain_y
                 _total_net_y      = _total_gain_y - _total_interest_y
-                _tc = "#34d399" if _total_net_y >= 0 else "#e5484d"
+                _tc = "#3DDC84" if _total_net_y >= 0 else "#FF6B6B"
                 st.markdown(
-                    f"<div style='background:#16171e; border:1px solid #262833; border-radius:8px; "
-                    f"padding:0.8rem 1.1rem; font-family:Inter; font-size:0.78rem;'>"
-                    f"<span style='color:#676c77; font-size:0.62rem; text-transform:uppercase; letter-spacing:0.1em;'>Totaal alle leningen</span><br>"
+                    f"<div style='background:#14161C; border:1px solid #1F2229; border-radius:8px; "
+                    f"padding:0.8rem 1.1rem; font-family:Manrope; font-size:0.78rem;'>"
+                    f"<span style='color:#8D93A0; font-size:0.62rem; '>Totaal alle leningen</span><br>"
                     f"<span style='color:{_tc}; font-size:1rem;'>Netto {'+' if _total_net_y >= 0 else ''}€{_total_net_y:,.0f}/jaar</span>"
-                    f"<span style='color:#676c77; font-size:0.75rem;'> &nbsp;(rendement €{_total_gain_y:,.0f} − rente €{_total_interest_y:,.0f})</span>"
+                    f"<span style='color:#8D93A0; font-size:0.75rem;'> &nbsp;(rendement €{_total_gain_y:,.0f} − rente €{_total_interest_y:,.0f})</span>"
                     f"</div>",
                     unsafe_allow_html=True
                 )
@@ -3351,24 +3318,24 @@ with tab_planning:
                 _fig_dca = go.Figure()
                 _fig_dca.add_trace(go.Bar(
                     x=_monthly['Month'], y=_monthly['Invested'],
-                    name='Invested', marker_color='#818cf8',
+                    name='Invested', marker_color='#4D7CFE',
                     hovertemplate='%{x|%b %Y}<br>€%{y:,.0f}<extra></extra>'
                 ))
                 _fig_dca.add_hline(
-                    y=monthly_invest_needed, line_dash="dash", line_color="#34d399",
+                    y=monthly_invest_needed, line_dash="dash", line_color="#3DDC84",
                     annotation_text=f"Target €{monthly_invest_needed:,.0f}/mo",
-                    annotation_font=dict(family="Inter", color="#34d399", size=11),
+                    annotation_font=dict(family="Manrope", color="#3DDC84", size=11),
                     annotation_position="top left"
                 )
                 _fig_dca.update_layout(
-                    plot_bgcolor="#0e0f14", paper_bgcolor="#0e0f14",
-                    font=dict(family="Inter", color="#676c77", size=11),
-                    xaxis=dict(gridcolor="#262833", linecolor="#262833", tickfont=dict(color="#676c77")),
-                    yaxis=dict(gridcolor="#262833", linecolor="#262833", tickfont=dict(color="#676c77"), title="€ Invested"),
+                    plot_bgcolor="#0C0D10", paper_bgcolor="#0C0D10",
+                    font=dict(family="Manrope", color="#8D93A0", size=11),
+                    xaxis=dict(gridcolor="#1F2229", linecolor="#1F2229", tickfont=dict(color="#8D93A0")),
+                    yaxis=dict(gridcolor="#1F2229", linecolor="#1F2229", tickfont=dict(color="#8D93A0"), title="€ Invested"),
                     margin=dict(l=10, r=10, t=40, b=10),
                     hovermode="x unified",
-                    hoverlabel=dict(bgcolor="#16171e", bordercolor="#262833", font=dict(family="Inter", color="#eef0f4", size=12)),
-                    title=dict(text="Monthly Investments vs Target", font=dict(family="Space Grotesk", color="#eef0f4", size=15), x=0),
+                    hoverlabel=dict(bgcolor="#14161C", bordercolor="#1F2229", font=dict(family="Manrope", color="#EDEFF3", size=12)),
+                    title=dict(text="Monthly Investments vs Target", font=dict(family="Manrope", color="#EDEFF3", size=15), x=0),
                     showlegend=False,
                 )
                 st.plotly_chart(_fig_dca, use_container_width=True)
@@ -3392,7 +3359,7 @@ with tab_planning:
     st.markdown("---")
     st.markdown("<h3>Box 3 Indicatie (NL)</h3>", unsafe_allow_html=True)
     st.markdown(
-        "<p style='font-family:Inter; font-size:0.78rem; color:#9ca0ab; margin-bottom:0.75rem;'>"
+        "<p style='font-family:Manrope; font-size:0.78rem; color:#A4A9B4; margin-bottom:0.75rem;'>"
         "Schatting van je vermogensbelasting volgens de overbruggingswet, op basis van je "
         "huidige vermogen als benadering van de peildatum (1 januari). "
         "Indicatie — geen fiscaal advies; controleer de actuele percentages op belastingdienst.nl.</p>",
