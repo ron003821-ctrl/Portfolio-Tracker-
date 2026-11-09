@@ -159,3 +159,45 @@ def test_normalize_ticker_keeps_known_forms_and_aliases():
     assert normalize_ticker('QDVE') == 'QDVE.DE' and normalize_ticker('QDVE.DE') == 'QDVE.DE'
     for t in ['BTC-EUR', 'TAO-EUR', 'SLMC.DE', 'FB2A', 'TSLA', 'BRK.B', 'IWDA.AS']:
         assert normalize_ticker(t) == t
+
+
+# ── Transactions page helpers ──
+from ui_components import transaction_amount, validate_transaction, transaction_summary, transactions_view, compare_bars, movers_visual
+
+def _tx_df():
+    return pd.DataFrame([
+        dict(id=1, Date=date(2026, 6, 4), Time='13:51', Type='Buy', Ticker='VUSA.AS', Quantity=6.0,
+             **{'Purchase Price': 122.754, 'Fee Amount': 3.0, 'Fee Unit': 'EUR', 'Income': 0.0}),
+        dict(id=2, Date=date(2026, 10, 2), Time='12:00', Type='Dividend', Ticker='VUSA.AS', Quantity=0.0,
+             **{'Purchase Price': 0.0, 'Fee Amount': 0.0, 'Fee Unit': 'None', 'Income': 31.69}),
+        dict(id=3, Date=date(2026, 11, 9), Time='10:44', Type='Buy', Ticker='QDVE.DE', Quantity=6.0,
+             **{'Purchase Price': 41.3, 'Fee Amount': 1.0, 'Fee Unit': 'EUR', 'Income': 0.0}),
+        dict(id=4, Date=date(2026, 10, 13), Time='12:00', Type='Staking Reward', Ticker='TAO-EUR', Quantity=0.208,
+             **{'Purchase Price': 0.0, 'Fee Amount': 0.0, 'Fee Unit': 'None', 'Income': 0.0}),
+    ])
+
+def test_transaction_amount_signs():
+    rows = _tx_df().to_dict('records')
+    assert abs(transaction_amount(rows[0]) - (-(6 * 122.754 + 3))) < 1e-9
+    assert transaction_amount(rows[1]) == 31.69
+    assert transaction_amount(rows[3]) is None
+
+def test_transactions_view_sorts_filters_and_keeps_id():
+    v = transactions_view(_tx_df())
+    assert list(v['id']) == [3, 4, 2, 1]                       # newest first
+    assert list(transactions_view(_tx_df(), 'vusa')['id']) == [2, 1]
+    assert list(transactions_view(_tx_df(), '', ['Dividend'])['id']) == [2]
+    assert pd.isna(v.loc[v['id'] == 2, 'Quantity']).all()       # dividends show no quantity
+
+def test_validate_and_summary():
+    ok = dict(type='Buy', ticker='QDVE.DE', quantity=6, price=41.3, fee_amount=1, income=0)
+    assert validate_transaction(ok) is None
+    assert "ticker" in validate_transaction({**ok, 'ticker': ' '}).lower()
+    assert "Quantity" in validate_transaction({**ok, 'quantity': 0})
+    assert "Dividend" in validate_transaction(dict(type='Dividend', ticker='X', income=0))
+    assert transaction_summary(_tx_df().to_dict('records')[2]) == "Buy 6 QDVE.DE at €41.30 on 9 Nov 2026"
+
+def test_card_visuals():
+    html = compare_bars([("You", 6.1, "#000"), ("World ETF", 9.4, "#111"), ("None", None, "#222")])
+    assert "+6.1%" in html and "+9.4%" in html and "—" in html and "width:100%" in html
+    assert movers_visual([]) == "" and "pf-chip-down" in movers_visual([("TAO", -0.071)])

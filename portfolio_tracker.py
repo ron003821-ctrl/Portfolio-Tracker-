@@ -16,7 +16,9 @@ importlib.reload(ui_components)
 from finance_utils import (xirr, investment_cashflows, benchmark_value, plan_deposit,
                            deposit_needed_without_selling, box3_base, next_peildatum, thresholds_for,
                            diff_cashflow, change_from_closes, daily_moves, normalize_ticker)
-from ui_components import eur, pct, heat_color, stat_card, stat_row, holdings_table
+from ui_components import (eur, pct, heat_color, stat_card, stat_row, holdings_table, trend_visual,
+                           movers_visual, compare_bars, TRANS_TYPES, transaction_amount,
+                           validate_transaction, transaction_summary, transactions_view)
 
 st.set_page_config(page_title="Portfolio Tracker", page_icon="", layout="wide")
 
@@ -401,6 +403,28 @@ st.markdown("""
     .pf-table thead tr th { border-top: none !important; border-bottom: none !important; }
     .pf-table .pf-tk { font-weight: 700; }
     .pf-table .pf-cat { color: #8D93A0; margin-left: 6px; }
+    .pf-card-body { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: flex-end; gap: 10px 14px; margin-top: 2px; }
+    .pf-card-main { min-width: 0; }
+    .pf-visual { flex: 0 1 150px; min-width: 120px; display: flex; flex-direction: column; align-items: flex-end; gap: 4px; }
+    .pf-visual svg { display: block; }
+    .pf-vis-cap { font-size: 0.74rem; font-weight: 600; }
+    .pf-chips { display: flex; flex-direction: column; align-items: flex-end; gap: 5px; }
+    .pf-chip { font-size: 0.74rem; font-weight: 700; padding: 3px 9px; border-radius: 999px; white-space: nowrap; }
+    .pf-chip-up { background: rgba(61,220,132,0.12); color: #3DDC84; }
+    .pf-chip-down { background: rgba(255,107,107,0.12); color: #FF6B6B; }
+    .pf-chip-flat { background: rgba(255,255,255,0.06); color: #A4A9B4; }
+    .pf-bars { width: 100%; display: flex; flex-direction: column; gap: 7px; }
+    .pf-bar-row { display: grid; grid-template-columns: auto minmax(40px, 1fr) auto; align-items: center; gap: 8px; font-size: 0.72rem; }
+    .pf-bar-label { color: #8D93A0; white-space: nowrap; }
+    .pf-bar-track { height: 6px; background: #1F2229; border-radius: 999px; overflow: hidden; }
+    .pf-bar-fill { display: block; height: 100%; border-radius: 999px; }
+    .pf-bar-val { color: #EDEFF3; font-weight: 700; white-space: nowrap; text-align: right; }
+    .st-key-pf-selbar, .st-key-pf-undo { background: #14161C !important; border: 1px solid #262A33 !important; border-radius: 14px !important; }
+    .st-key-pf-selbar { border-color: rgba(77,124,254,0.55) !important; }
+    [data-testid="stDialog"] [role="dialog"] { background: #14161C !important; border: 1px solid #262A33 !important; border-radius: 18px !important; }
+    [data-testid="stPills"] button { border-radius: 999px !important; min-height: 36px !important; }
+    div.st-key-dlg_del_ok .stButton > button[kind="primary"],
+    div.st-key-dlg_del_ok .stButton > button[kind="primary"]:hover { background-color: #E5484D !important; border-color: #E5484D !important; color: #FFFFFF !important; }
     .pf-up { color: #3DDC84 !important; }
     .pf-down { color: #FF6B6B !important; }
     .pf-muted { color: #8D93A0 !important; }
@@ -1053,8 +1077,9 @@ st.sidebar.markdown("""
 
 # Page navigation (replaces the old tab bar; only the chosen page is rendered)
 _PAGES = {
-    "Overview":   ":material/dashboard:",
-    "History":    ":material/schedule:",
+    "Overview":     ":material/dashboard:",
+    "Transactions": ":material/receipt_long:",
+    "History":      ":material/schedule:",
     "Cashflow":   ":material/swap_horiz:",
     "Allocation": ":material/donut_large:",
     "Charts":     ":material/candlestick_chart:",
@@ -1115,132 +1140,159 @@ if (
 # -------------------------
 # Sidebar - Add Transaction
 # -------------------------
-with st.sidebar.expander("Add transaction", expanded=False, icon=":material/add_circle:"):
-    trans_type = st.selectbox("Transaction Type", ['Buy', 'Sell', 'Dividend', 'Staking', 'Staking Reward', 'Transfer'], key="add_trans_type")
-    transaction_date = st.date_input("Transaction Date", value=datetime.now(ZoneInfo("Europe/Amsterdam")).date(), key="add_date")
-
-    if trans_type != 'Dividend':
-        transaction_time_str = st.text_input("Transaction Time (HH:MM, 24-hour format)", value="12:00", placeholder="e.g., 09:30", key="add_time")
+# -------------------------
+# Transactions: shared form, add / edit / delete dialogs
+# -------------------------
+def _parse_time(value) -> time:
+    if isinstance(value, time):
+        return value
+    for fmt in ("%H:%M", "%H:%M:%S"):
         try:
-            transaction_time = datetime.strptime(transaction_time_str, "%H:%M").time()
+            return datetime.strptime(str(value), fmt).time()
         except ValueError:
-            st.error("Please enter time in HH:MM format (e.g., 09:30).")
-            transaction_time = time(12, 0)
-    else:
-        transaction_time = time(12, 0)
+            continue
+    return time(12, 0)
 
-    ticker = st.text_input(
-        "Ticker Symbol (e.g., VWRL.AS, META, MSFT, BTC-EUR, TAO-EUR)",
-        key="add_ticker_input"
-    ) if trans_type != '' else ''
+
+def _transaction_fields(prefix: str, d: dict | None = None) -> dict:
+    """Input fields for one transaction. `d` pre-fills them (edit / duplicate).
+    Fields change with the type; returns the entered values."""
+    d = d or {}
+    today = datetime.now(ZoneInfo("Europe/Amsterdam")).date()
+    c1, c2 = st.columns(2)
+    t_type = c1.selectbox("Type", TRANS_TYPES,
+                          index=TRANS_TYPES.index(d['Type']) if d.get('Type') in TRANS_TYPES else 0,
+                          key=f"{prefix}_type")
+    ticker = c2.text_input("Ticker", value=str(d.get('Ticker') or ''),
+                           placeholder="e.g. VWCE.DE, MSFT, BTC-EUR", key=f"{prefix}_ticker")
     if ticker and normalize_ticker(ticker) != ticker.strip():
-        st.caption(f"Will be saved as **{normalize_ticker(ticker)}** (same asset, the symbol the price feed knows).")
+        st.caption(f"Will be saved as **{normalize_ticker(ticker)}**, the symbol the price feed knows.")
 
-    if trans_type in ['Buy', 'Sell', 'Staking']:
-        _price_label = "Sell Price per Unit (EUR)" if trans_type == 'Sell' else "Price per Unit (EUR)"
-        quantity = st.number_input("Quantity", min_value=0.0, value=0.0, step=1e-12, format="%.12f", key="add_quantity_input")
-        purchase_price = st.number_input(_price_label, min_value=0.0, value=0.0, step=0.01, format="%.2f", key="add_price_input")
-        # Show currency hint when ticker is a USD stock
-        if ticker:
-            _t_ccy = _ticker_currency(normalize_ticker(ticker))
-            if _t_ccy == 'USD':
-                st.caption(
-                    "💡 US aandeel — vul de prijs in **EUR** in (niet USD). "
-                    "Kijk op je broker-bevestiging voor de EUR aankoopprijs, "
-                    "of deel de USD-prijs door de wisselkoers op de aankoopdatum."
-                )
-            elif _t_ccy == 'GBP':
-                st.caption("💡 Brits aandeel — vul de prijs in EUR in (omrekenen van GBP/pence).")
-        if trans_type in ['Buy', 'Sell']:
-            fee_unit = st.selectbox("Fee Unit", options=['None', 'EUR'], key="add_fee_unit_select")
-            fee_amount = st.number_input("Transaction Fee (EUR)", min_value=0.0, value=0.0, step=1e-12, format="%.12f", key="add_fee_amount_input") if fee_unit != 'None' else 0.0
-        else:
-            fee_unit = 'None'
-            fee_amount = 0.0
-    elif trans_type == 'Staking Reward':
-        quantity = st.number_input("Quantity received", min_value=0.0, value=0.0, step=1e-12, format="%.12f", key="add_quantity_input")
-        purchase_price = 0.0
-        fee_unit = 'None'
-        fee_amount = 0.0
-        st.caption("Free tokens earned from staking (e.g. TAO from Bittensor subnets). Cost basis is zero — full current value shows as gain.")
-    elif trans_type == 'Dividend':
-        income = st.number_input("Dividend Income (EUR)", min_value=0.0, value=0.0, step=0.01, format="%.2f", key="add_income_input")
-        quantity = 0.0
-        purchase_price = 0.0
-        fee_unit = 'None'
-        fee_amount = 0.0
-    elif trans_type == 'Transfer':
-        fee_unit = st.selectbox("Fee Unit", options=['EUR', 'Asset'], key="add_fee_unit_transfer")
-        fee_amount = st.number_input("Transaction Fee Amount", min_value=0.0, value=0.0, step=1e-12, format="%.12f", key="add_fee_amount_transfer")
-        quantity = 0.0
-        purchase_price = 0.0
-
-    add_button = st.button("Add Transaction", key="add_transaction_button")
-
-# -------------------------
-# Sidebar - Edit/Delete Transaction
-# -------------------------
-with st.sidebar.expander("Edit / delete transaction", expanded=False, icon=":material/edit:"):
-    if not st.session_state.get('transactions', pd.DataFrame()).empty:
-        trans_index = st.selectbox(
-            "Select Transaction to Edit/Delete",
-            options=range(len(st.session_state.transactions)),
-            format_func=lambda i: f"{st.session_state.transactions.iloc[i]['Date']} {st.session_state.transactions.iloc[i]['Type']} {st.session_state.transactions.iloc[i]['Ticker']}",
-            key="edit_index_select"
-        )
-        if trans_index is not None:
-            trans = st.session_state.transactions.iloc[trans_index]
-            _type_options = ['Buy', 'Sell', 'Dividend', 'Staking', 'Staking Reward', 'Transfer']
-            edit_trans_type = st.selectbox("Transaction Type", _type_options, index=_type_options.index(trans['Type']) if trans['Type'] in _type_options else 0, key="edit_trans_type_select")
-            edit_date = st.date_input("Transaction Date", value=pd.to_datetime(trans['Date']).date(), key="edit_date_input")
-
-            if edit_trans_type != 'Dividend':
-                edit_time_str = st.text_input("Transaction Time (HH:MM, 24-hour format)", value=str(trans['Time']), placeholder="e.g., 09:30", key="edit_time_input")
-                try:
-                    edit_time = datetime.strptime(edit_time_str, "%H:%M").time()
-                except ValueError:
-                    st.error("Please enter time in HH:MM format (e.g., 09:30).")
-                    edit_time = time(12, 0)
-            else:
-                edit_time = time(12, 0)
-
-            edit_ticker = st.text_input("Ticker Symbol", value=trans['Ticker'], key="edit_ticker_input") if edit_trans_type != '' else ''
-
-            if edit_trans_type in ['Buy', 'Sell', 'Staking']:
-                _edit_price_label = "Sell Price per Unit (EUR)" if edit_trans_type == 'Sell' else "Price per Unit (EUR)"
-                edit_quantity = st.number_input("Quantity", min_value=0.0, value=float(trans['Quantity']), step=1e-12, format="%.12f", key="edit_quantity_input")
-                edit_purchase_price = st.number_input(_edit_price_label, min_value=0.0, value=float(trans['Purchase Price']), step=0.01, format="%.2f", key="edit_price_input")
-                if edit_trans_type in ['Buy', 'Sell']:
-                    edit_fee_unit = st.selectbox("Fee Unit", options=['None', 'EUR'], index=['None', 'EUR'].index(trans['Fee Unit']) if trans['Fee Unit'] in ['None', 'EUR'] else 0, key="edit_fee_unit_select")
-                    edit_fee_amount = st.number_input("Transaction Fee (EUR)", min_value=0.0, value=float(trans['Fee Amount']), step=1e-12, format="%.12f", key="edit_fee_amount_input") if edit_fee_unit != 'None' else 0.0
-                else:
-                    edit_fee_unit = 'None'
-                    edit_fee_amount = 0.0
-            elif edit_trans_type == 'Staking Reward':
-                edit_quantity = st.number_input("Quantity received", min_value=0.0, value=float(trans['Quantity']), step=1e-12, format="%.12f", key="edit_quantity_input")
-                edit_purchase_price = 0.0
-                edit_fee_unit = 'None'
-                edit_fee_amount = 0.0
-                st.caption("Free tokens — cost basis is zero.")
-            elif edit_trans_type == 'Dividend':
-                edit_income = st.number_input("Dividend Income (EUR)", min_value=0.0, value=float(trans['Income']), step=0.01, format="%.2f", key="edit_income_input")
-                edit_quantity = 0.0
-                edit_purchase_price = 0.0
-                edit_fee_unit = 'None'
-                edit_fee_amount = 0.0
-            elif edit_trans_type == 'Transfer':
-                edit_fee_unit = st.selectbox("Fee Unit", options=['EUR', 'Asset'], index=['EUR', 'Asset'].index(trans['Fee Unit']) if trans['Fee Unit'] in ['EUR', 'Asset'] else 0, key="edit_fee_unit_transfer")
-                edit_fee_amount = st.number_input("Transaction Fee Amount", min_value=0.0, value=float(trans['Fee Amount']), step=1e-12, format="%.12f", key="edit_fee_amount_transfer")
-                edit_quantity = 0.0
-                edit_purchase_price = 0.0
-
-            col1, col2 = st.columns(2)
-            with col1:
-                edit_button = st.button("Update Transaction", key="edit_transaction_button")
-            with col2:
-                delete_button = st.button("Delete Transaction", key="delete_transaction_button")
+    c3, c4 = st.columns(2)
+    t_date = c3.date_input("Date", value=d.get('Date') or today, format="DD/MM/YYYY", key=f"{prefix}_date")
+    if t_type != 'Dividend':
+        t_time = c4.time_input("Time", value=_parse_time(d.get('Time', '12:00')), step=60, key=f"{prefix}_time")
     else:
-        st.info("No transactions available yet.")
+        t_time = time(12, 0)
+
+    v = dict(type=t_type, ticker=ticker, date=t_date, time=t_time,
+             quantity=0.0, price=0.0, fee_amount=0.0, fee_unit='None', income=0.0)
+    is_crypto = get_category(normalize_ticker(ticker)) == 'Crypto' if ticker else False
+    q_fmt = "%.8f" if is_crypto else "%.4f"
+
+    if t_type in ('Buy', 'Sell', 'Staking'):
+        c5, c6, c7 = st.columns(3)
+        v['quantity'] = c5.number_input("Quantity", min_value=0.0, value=float(d.get('Quantity') or 0.0),
+                                        format=q_fmt, key=f"{prefix}_qty")
+        v['price'] = c6.number_input("Price per unit (€)", min_value=0.0,
+                                     value=float(d.get('Purchase Price') or 0.0), format="%.4f",
+                                     key=f"{prefix}_price")
+        if t_type in ('Buy', 'Sell'):
+            prev_fee = float(d.get('Fee Amount') or 0.0) if d.get('Fee Unit') == 'EUR' else 0.0
+            v['fee_amount'] = c7.number_input("Fee (€)", min_value=0.0, value=prev_fee, format="%.2f",
+                                              key=f"{prefix}_fee")
+            v['fee_unit'] = 'EUR' if v['fee_amount'] > 0 else 'None'
+        if ticker and _ticker_currency(normalize_ticker(ticker)) != 'EUR' and not is_crypto:
+            st.caption("Enter the price in **euros**, as on your broker's confirmation (not in USD or GBP).")
+        total = v['quantity'] * v['price'] + (v['fee_amount'] if t_type == 'Buy' else -v['fee_amount'])
+        if v['quantity'] > 0 and v['price'] > 0:
+            label = "You paid" if t_type in ('Buy', 'Staking') else "You received"
+            st.markdown(f"<div class='pf-small'>{label} <b style='color:#EDEFF3'>{eur(total, 2)}</b></div>",
+                        unsafe_allow_html=True)
+    elif t_type == 'Staking Reward':
+        v['quantity'] = st.number_input("Quantity received", min_value=0.0,
+                                        value=float(d.get('Quantity') or 0.0), format="%.8f", key=f"{prefix}_qty")
+        st.caption("Free tokens from staking: cost basis is zero, so their full value counts as profit.")
+    elif t_type == 'Dividend':
+        v['income'] = st.number_input("Amount received (€)", min_value=0.0, value=float(d.get('Income') or 0.0),
+                                      format="%.2f", key=f"{prefix}_income")
+    elif t_type == 'Transfer':
+        c8, c9 = st.columns(2)
+        units = ['EUR', 'Asset']
+        v['fee_unit'] = c8.selectbox("Fee paid in", units,
+                                     index=units.index(d['Fee Unit']) if d.get('Fee Unit') in units else 0,
+                                     format_func=lambda u: "Euros" if u == 'EUR' else "The asset itself",
+                                     key=f"{prefix}_fee_unit")
+        v['fee_amount'] = c9.number_input("Fee", min_value=0.0, value=float(d.get('Fee Amount') or 0.0),
+                                          format="%.8f", key=f"{prefix}_fee_amt")
+    return v
+
+
+def _reload_transactions():
+    st.session_state.transactions = load_transactions()
+    st.session_state.tx_table_ver = st.session_state.get('tx_table_ver', 0) + 1
+
+
+def _save_new(v: dict) -> bool:
+    return add_transaction_db(v['date'], v['time'], v['type'], v['ticker'], v['quantity'], v['price'],
+                              v['fee_amount'], v['fee_unit'], v['income'])
+
+
+@st.dialog("Add transaction", width="large")
+def add_transaction_dialog(prefill: dict | None = None):
+    v = _transaction_fields("dlg_add", prefill)
+    st.markdown("<div style='height:0.3rem'></div>", unsafe_allow_html=True)
+    if st.button("Add transaction", type="primary", icon=":material/add:", use_container_width=True,
+                 key="dlg_add_save"):
+        err = validate_transaction(v)
+        if err:
+            st.error(err)
+        elif _save_new(v):
+            _reload_transactions()
+            st.session_state['_toast'] = f"Added: {transaction_summary(_as_row(v))}"
+            st.rerun()
+
+
+@st.dialog("Edit transaction", width="large")
+def edit_transaction_dialog(row: dict):
+    v = _transaction_fields(f"dlg_edit_{row['id']}", row)
+    st.markdown("<div style='height:0.3rem'></div>", unsafe_allow_html=True)
+    if st.button("Save changes", type="primary", icon=":material/check:", use_container_width=True,
+                 key="dlg_edit_save"):
+        err = validate_transaction(v)
+        if err:
+            st.error(err)
+        elif update_transaction_db(row['id'], v['date'], v['time'], v['type'], v['ticker'], v['quantity'],
+                                   v['price'], v['fee_amount'], v['fee_unit'], v['income']):
+            _reload_transactions()
+            st.session_state['_toast'] = f"Saved: {transaction_summary(_as_row(v))}"
+            st.rerun()
+
+
+@st.dialog("Delete this transaction?")
+def delete_transaction_dialog(row: dict):
+    st.markdown(f"**{transaction_summary({**row, 'Ticker': normalize_ticker(row['Ticker'])})}**")
+    st.caption("Your holdings, profit and history are recalculated without it. "
+               "You can undo this right after deleting.")
+    c1, c2 = st.columns(2)
+    if c1.button("Cancel", use_container_width=True, key="dlg_del_cancel"):
+        st.rerun()
+    if c2.button("Delete", type="primary", icon=":material/delete:", use_container_width=True, key="dlg_del_ok"):
+        if delete_transaction_db(row['id']):
+            st.session_state['last_deleted'] = row
+            _reload_transactions()
+            st.session_state['_toast'] = "Transaction deleted."
+            st.rerun()
+
+
+def _as_row(v: dict) -> dict:
+    """Form values in the same shape as a transactions row (for summaries)."""
+    return {'Type': v['type'], 'Ticker': normalize_ticker(v['ticker']), 'Date': v['date'],
+            'Quantity': v['quantity'], 'Purchase Price': v['price'], 'Fee Amount': v['fee_amount'],
+            'Fee Unit': v['fee_unit'], 'Income': v['income']}
+
+
+def _undo_delete():
+    r = st.session_state.pop('last_deleted', None)
+    if r and add_transaction_db(r['Date'], _parse_time(r.get('Time')), r['Type'], r['Ticker'],
+                                r.get('Quantity') or 0.0, r.get('Purchase Price') or 0.0,
+                                r.get('Fee Amount') or 0.0, r.get('Fee Unit') or 'None', r.get('Income') or 0.0):
+        _reload_transactions()
+        st.session_state['_toast'] = "Transaction restored."
+
+
+def _go_to(page: str):
+    st.session_state.nav = page
 
 # -------------------------
 # Sidebar - Cashflow
@@ -1646,49 +1698,6 @@ def get_daily_change(ticker):
     return change_from_closes(get_recent_closes(ticker))
 
 # -------------------------
-# Add / Edit / Delete transactions
-# -------------------------
-if add_button and ticker:
-    if trans_type in ['Buy', 'Sell', 'Staking', 'Staking Reward'] and quantity <= 0:
-        st.sidebar.error("Quantity must be positive.")
-    elif trans_type in ['Buy', 'Sell', 'Staking'] and purchase_price <= 0:
-        st.sidebar.error("Price per unit must be positive.")
-    elif trans_type == 'Dividend' and income <= 0:
-        st.sidebar.error("Income must be positive for Dividend.")
-    elif trans_type == 'Transfer' and fee_amount <= 0:
-        st.sidebar.error("Fee amount must be positive for Transfer.")
-    else:
-        income_value = income if trans_type == 'Dividend' else 0.0
-        if add_transaction_db(transaction_date, transaction_time, trans_type, ticker, quantity, purchase_price, fee_amount, fee_unit, income_value):
-            st.session_state.transactions = load_transactions()
-            st.sidebar.success(f"Added {trans_type} for {ticker}.")
-            st.rerun()
-
-if 'edit_button' in locals() and edit_button and trans_index is not None:
-    if edit_trans_type in ['Buy', 'Sell', 'Staking', 'Staking Reward'] and edit_quantity <= 0:
-        st.sidebar.error("Quantity must be positive.")
-    elif edit_trans_type in ['Buy', 'Sell', 'Staking'] and edit_purchase_price <= 0:
-        st.sidebar.error("Price per unit must be positive.")
-    elif edit_trans_type == 'Dividend' and edit_income <= 0:
-        st.sidebar.error("Income must be positive for Dividend.")
-    elif edit_trans_type == 'Transfer' and edit_fee_amount <= 0:
-        st.sidebar.error("Fee amount must be positive for Transfer.")
-    else:
-        trans_id = st.session_state.transactions.iloc[trans_index]['id']
-        edit_income_value = edit_income if edit_trans_type == 'Dividend' else 0.0
-        if update_transaction_db(trans_id, edit_date, edit_time, edit_trans_type, edit_ticker, edit_quantity, edit_purchase_price, edit_fee_amount, edit_fee_unit, edit_income_value):
-            st.session_state.transactions = load_transactions()
-            st.sidebar.success("Updated transaction.")
-            st.rerun()
-
-if 'delete_button' in locals() and delete_button and trans_index is not None:
-    trans_id = st.session_state.transactions.iloc[trans_index]['id']
-    if delete_transaction_db(trans_id):
-        st.session_state.transactions = load_transactions()
-        st.sidebar.success("Deleted transaction.")
-        st.rerun()
-
-# -------------------------
 # Compute portfolio
 # -------------------------
 def compute_portfolio(transactions_df=None, cash_balance_local=None):
@@ -1827,16 +1836,25 @@ _xirr_pct         = _xirr * 100 if _xirr is not None else None
 _today_label = datetime.now(ZoneInfo("Europe/Amsterdam")).strftime("%A %-d %B")
 _PAGE_SUBTITLES = {
     "Overview":   "Stocks and ETFs at their latest close, crypto since 00:00 UTC",
+    "Transactions": "Every buy, sell, dividend and transfer. Click a row to change it",
     "History":    "How your portfolio value developed",
     "Cashflow":   "Monthly income and expenses",
     "Allocation": "How your money is spread, and your targets",
     "Charts":     "Price history per asset",
     "Planning":   "Goals, deposits and projections",
 }
-st.markdown(
+_hl, _hr = st.columns([3, 1], vertical_alignment="center")
+_hl.markdown(
     f"<h1>{_page}</h1><div class='pf-sub'>{_today_label} · {_PAGE_SUBTITLES.get(_page, '')}</div>",
     unsafe_allow_html=True,
 )
+with _hr:
+    if st.button("Add transaction", type="primary", icon=":material/add:", use_container_width=True,
+                 key="hdr_add"):
+        add_transaction_dialog()
+
+if (_msg := st.session_state.pop('_toast', None)):
+    st.toast(_msg, icon=":material/check_circle:")
 
 # Category colors (used by Overview dashboard and Allocation tab)
 _CAT_COLORS = {'ETF': '#4D7CFE', 'Stock': '#22C3B5', 'Crypto': '#F5A623', 'Cash & Banks': '#5B6170'}
@@ -1872,11 +1890,14 @@ def _benchmark_prices(ticker: str) -> pd.DataFrame:
     return get_historical_data(ticker, period='max')
 
 
-def _benchmark_diff():
-    """Your investments now minus the same euros put into a world ETF (VWCE) on the same dates."""
+def _benchmark():
+    """The same euros put into a world ETF (VWCE) on the same dates.
+    Returns (your value minus the benchmark value, the benchmark's return per year as a fraction)."""
     b_flows = investment_cashflows(st.session_state.transactions, include_dividends=False)
     b_val = benchmark_value(b_flows, _benchmark_prices('VWCE.DE')) if b_flows else None
-    return (_invest_value_now - b_val) if b_val is not None else None
+    if b_val is None:
+        return None, None
+    return _invest_value_now - b_val, xirr(b_flows + [(_today_local, b_val)])
 
 
 def _net_worth_figure(hist: pd.DataFrame) -> go.Figure:
@@ -1942,19 +1963,51 @@ def render_overview_top(portfolio_df: pd.DataFrame):
     nw_sub = f"invested {eur(_invest_value_now)} · cash {eur(cash_total)}"
     if _total_debt > 0:
         nw_sub += f" · debt {eur(_total_debt)}"
+    _hist30 = load_portfolio_value_history()
+    nw_visual = ""
+    if not _hist30.empty and len(_hist30) >= 2:
+        _hist30 = _hist30.copy()
+        _hist30['date'] = pd.to_datetime(_hist30['date'])
+        _hist30 = _hist30[_hist30['date'] >= pd.Timestamp(_today_local) - pd.Timedelta(days=30)].sort_values('date')
+        if len(_hist30) >= 2:
+            _v = _hist30['total_value'].astype(float).tolist()
+            _ch = (_v[-1] / _v[0] - 1) if _v[0] else None
+            nw_visual = trend_visual(_v, f"30 days {pct(_ch, 1)}" if _ch is not None else "30 days",
+                                     "pf-up" if (_ch or 0) > 0 else "pf-down" if (_ch or 0) < 0 else "pf-muted")
+
     today_cls = "pf-up" if today_move > 0 else "pf-down" if today_move < 0 else ""
     today_sub = (f"{pct(today_change)} · {n_up} up, {n_down} down" if today_change is not None
                  else "no price history right now")
+    _known = moves.dropna(subset=['Change']) if not moves.empty else moves
+    _movers = []
+    if not _known.empty:
+        _best = _known.loc[_known['Change'].idxmax()]
+        _worst = _known.loc[_known['Change'].idxmin()]
+        _movers = [(_best['Ticker'], _best['Change'])]
+        if _worst['Ticker'] != _best['Ticker']:
+            _movers.append((_worst['Ticker'], _worst['Change']))
+
     invested = float(portfolio_df['Cost Basis'].sum()) if not portfolio_df.empty else 0.0
-    bench = _benchmark_diff() if not portfolio_df.empty else None
-    xirr_sub = (f"{eur(bench, sign=True)} vs world ETF" if bench is not None
+    profit_visual = compare_bars([
+        ("Unrealized", float(unrealized), "#4D7CFE"),
+        ("Realized", float(realized), "#22C3B5"),
+    ], unit="€")
+
+    bench_diff, bench_xirr = _benchmark() if not portfolio_df.empty else (None, None)
+    xirr_sub = (f"{eur(bench_diff, sign=True)} vs world ETF" if bench_diff is not None
                 else "money-weighted (XIRR)")
+    ret_visual = compare_bars([
+        ("You", _xirr_pct, "#4D7CFE"),
+        ("World ETF", bench_xirr * 100 if bench_xirr is not None else None, "#5B6170"),
+    ]) if _xirr_pct is not None else ""
+
     st.markdown(stat_row([
-        stat_card("Net worth", eur(_net_worth), nw_sub),
-        stat_card("Today", eur(today_move, 2, sign=True), today_sub, today_cls),
+        stat_card("Net worth", eur(_net_worth), nw_sub, visual=nw_visual),
+        stat_card("Today", eur(today_move, 2, sign=True), today_sub, today_cls, visual=movers_visual(_movers)),
         stat_card("Total profit", eur(total_profit, sign=True),
-                  f"{profit_percentage:+.1f}% on {eur(invested)}"),
-        stat_card("Return per year", f"{_xirr_pct:+.1f}%" if _xirr_pct is not None else "—", xirr_sub),
+                  f"{profit_percentage:+.1f}% on {eur(invested)}", visual=profit_visual),
+        stat_card("Return per year", f"{_xirr_pct:+.1f}%" if _xirr_pct is not None else "—", xirr_sub,
+                  visual=ret_visual),
     ]), unsafe_allow_html=True)
 
     # ── Net worth chart + today's map ──
@@ -2455,19 +2508,78 @@ if _page == "Overview":
                 use_container_width=True, hide_index=True
             )
 
-    st.markdown("<div style='height:0.8rem'></div>", unsafe_allow_html=True)
-    with st.expander(f"All Transactions ({len(st.session_state.transactions)})", expanded=False):
-        if not st.session_state.transactions.empty:
-            _tx_view = st.session_state.transactions[TRANS_DISPLAY_COLS].copy()
-            _tx_view['Ticker'] = _tx_view['Ticker'].apply(normalize_ticker)
-            st.dataframe(_tx_view.style.format({
-                'Quantity': '{:.8f}',
-                'Purchase Price': '€{:.2f}',
-                'Fee Amount': '{:.6f}',
-                'Income': '€{:.2f}'
-            }), use_container_width=True)
-        else:
-            st.info("No transactions available. Add transactions using the sidebar.")
+    st.markdown("<div style='height:0.6rem'></div>", unsafe_allow_html=True)
+    st.button(f"All transactions ({len(st.session_state.transactions)})", icon=":material/receipt_long:",
+              on_click=_go_to, args=("Transactions",), key="ov_all_tx")
+
+# -------------------------
+# Page: Transactions
+# -------------------------
+if _page == "Transactions":
+    _tx = st.session_state.transactions
+
+    if st.session_state.get('last_deleted'):
+        with st.container(border=True, key="pf-undo"):
+            u1, u2 = st.columns([4, 1], vertical_alignment="center")
+            u1.markdown(f"<span class='pf-muted'>Deleted:</span> {transaction_summary(st.session_state['last_deleted'])}",
+                        unsafe_allow_html=True)
+            u2.button("Undo", icon=":material/undo:", on_click=_undo_delete, use_container_width=True, key="tx_undo")
+
+    if _tx.empty:
+        st.info("No transactions yet. Use **Add transaction** at the top to add your first one.")
+    else:
+        f1, f2 = st.columns([1, 2], vertical_alignment="center")
+        _q = f1.text_input("Search", placeholder="Search ticker", icon=":material/search:",
+                           label_visibility="collapsed", key="tx_search")
+        _types = f2.pills("Type", TRANS_TYPES, selection_mode="multi", label_visibility="collapsed", key="tx_types")
+
+        _view = transactions_view(_tx.assign(Ticker=_tx['Ticker'].map(normalize_ticker)), _q, _types)
+        _n_all = len(_tx)
+        st.markdown(
+            f"<div class='pf-small' style='margin:0.2rem 0 0.4rem'>"
+            f"{len(_view)} of {_n_all} transactions · click a row to edit, duplicate or delete it</div>",
+            unsafe_allow_html=True)
+
+        _ev = st.dataframe(
+            _view.drop(columns=['id']),
+            hide_index=True,
+            use_container_width=True,
+            height=min(640, 40 + 35 * max(len(_view), 1)),
+            on_select="rerun",
+            selection_mode="single-row",
+            key=f"tx_table_{st.session_state.get('tx_table_ver', 0)}",
+            column_config={
+                'Date': st.column_config.DateColumn('Date', format="D MMM YYYY"),
+                'Type': st.column_config.TextColumn('Type'),
+                'Ticker': st.column_config.TextColumn('Asset'),
+                'Quantity': st.column_config.NumberColumn('Quantity', format="%.8g"),
+                'Price': st.column_config.NumberColumn('Price (€)', format="%.2f"),
+                'Fee': st.column_config.NumberColumn('Fee', format="%.4g"),
+                'Amount': st.column_config.NumberColumn('Amount (€)', format="%+.2f",
+                                                        help="Money out is negative, money in is positive"),
+            },
+        )
+
+        _sel = _ev.selection.rows if _ev is not None else []
+        if _sel and _sel[0] < len(_view):
+            _id = _view.iloc[_sel[0]]['id']
+            _match = _tx[_tx['id'] == _id]
+            if not _match.empty:
+                _row = _match.iloc[0].to_dict()
+                _row_disp = {**_row, 'Ticker': normalize_ticker(_row['Ticker'])}
+                with st.container(border=True, key="pf-selbar"):
+                    s1, s2, s3, s4 = st.columns([3, 1, 1, 1], vertical_alignment="center")
+                    s1.markdown(f"<span class='pf-muted'>Selected</span><br><b>{transaction_summary(_row_disp)}</b>",
+                                unsafe_allow_html=True)
+                    if s2.button("Edit", icon=":material/edit:", use_container_width=True, key="tx_edit"):
+                        edit_transaction_dialog(_row)
+                    if s3.button("Duplicate", icon=":material/content_copy:", use_container_width=True,
+                                 key="tx_dup", help="Add a new transaction with the same details, dated today"):
+                        _dup = dict(_row)
+                        _dup['Date'] = datetime.now(ZoneInfo("Europe/Amsterdam")).date()
+                        add_transaction_dialog(_dup)
+                    if s4.button("Delete", icon=":material/delete:", use_container_width=True, key="tx_del"):
+                        delete_transaction_dialog(_row)
 
 # -------------------------
 # Tab: Asset Allocation
