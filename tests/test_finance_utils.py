@@ -141,3 +141,21 @@ def test_holdings_table_escapes_tickers_and_handles_missing_change():
     assert "<b>X</b>" not in html and "&lt;b&gt;X&lt;/b&gt;" in html
     assert "pf-down" in html and "50.0%" in html
     assert change_class(None) == "pf-muted"
+
+
+# ── Ticker normalisation ──
+from finance_utils import normalize_ticker
+
+def test_normalize_ticker_maps_degiro_exchange_codes():
+    assert normalize_ticker('QDVE.XGAT') == 'QDVE.DE'      # Tradegate → Xetra listing
+    assert normalize_ticker('vwce.xgat') == 'VWCE.DE'
+    assert normalize_ticker('QDVE XGAT') == 'QDVE.DE'
+    assert normalize_ticker('ASML:EAM') == 'ASML.AS'
+    assert normalize_ticker('MSFT.NDQ') == 'MSFT'
+    assert normalize_ticker('SAP.XETR') == 'SAP.DE'
+
+def test_normalize_ticker_keeps_known_forms_and_aliases():
+    assert normalize_ticker(' Vusa ') == 'VUSA.AS' and normalize_ticker('Vusa.AS') == 'VUSA.AS'
+    assert normalize_ticker('QDVE') == 'QDVE.DE' and normalize_ticker('QDVE.DE') == 'QDVE.DE'
+    for t in ['BTC-EUR', 'TAO-EUR', 'SLMC.DE', 'FB2A', 'TSLA', 'BRK.B', 'IWDA.AS']:
+        assert normalize_ticker(t) == t

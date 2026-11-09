@@ -15,7 +15,7 @@ importlib.reload(finance_utils)
 importlib.reload(ui_components)
 from finance_utils import (xirr, investment_cashflows, benchmark_value, plan_deposit,
                            deposit_needed_without_selling, box3_base, next_peildatum, thresholds_for,
-                           diff_cashflow, change_from_closes, daily_moves)
+                           diff_cashflow, change_from_closes, daily_moves, normalize_ticker)
 from ui_components import eur, pct, heat_color, stat_card, stat_row, holdings_table
 
 st.set_page_config(page_title="Portfolio Tracker", page_icon="", layout="wide")
@@ -55,17 +55,6 @@ _KNOWN_ETFS = {
     'VOO','VTI','QQQ','SPY','IVV','VEA','VWO','GLD','TLT','SHY','AGG',
     'ARKK','XLK','XLF','VNQ','SCHD',
 }
-
-def normalize_ticker(ticker: str) -> str:
-    """One canonical form per asset: uppercase, trimmed, known aliases mapped.
-    Prevents 'VUSA', 'Vusa' and 'VUSA.AS' from showing up as three assets."""
-    t = str(ticker).strip().upper()
-    _ALIASES = {
-        'VUSA': 'VUSA.AS',
-        'VWRL': 'VWRL.AS',
-        'QDVE': 'QDVE.DE',
-    }
-    return _ALIASES.get(t, t)
 
 def auto_detect_category(ticker: str) -> str:
     """Crypto → known list. ETF → known ETF set. Everything else → Stock.
@@ -1144,6 +1133,8 @@ with st.sidebar.expander("Add transaction", expanded=False, icon=":material/add_
         "Ticker Symbol (e.g., VWRL.AS, META, MSFT, BTC-EUR, TAO-EUR)",
         key="add_ticker_input"
     ) if trans_type != '' else ''
+    if ticker and normalize_ticker(ticker) != ticker.strip():
+        st.caption(f"Will be saved as **{normalize_ticker(ticker)}** (same asset, the symbol the price feed knows).")
 
     if trans_type in ['Buy', 'Sell', 'Staking']:
         _price_label = "Sell Price per Unit (EUR)" if trans_type == 'Sell' else "Price per Unit (EUR)"
@@ -1151,7 +1142,7 @@ with st.sidebar.expander("Add transaction", expanded=False, icon=":material/add_
         purchase_price = st.number_input(_price_label, min_value=0.0, value=0.0, step=0.01, format="%.2f", key="add_price_input")
         # Show currency hint when ticker is a USD stock
         if ticker:
-            _t_ccy = _ticker_currency(ticker.upper())
+            _t_ccy = _ticker_currency(normalize_ticker(ticker))
             if _t_ccy == 'USD':
                 st.caption(
                     "💡 US aandeel — vul de prijs in **EUR** in (niet USD). "
@@ -1808,9 +1799,10 @@ def compute_portfolio(transactions_df=None, cash_balance_local=None):
     profit_percentage = (total_profit / total_invested * 100) if total_invested > 0 else 0.0
     if _zero_price_tickers:
         st.warning(
-            f"Geen prijs gevonden voor: {', '.join(_zero_price_tickers)}. "
-            f"Waarde en P/L van deze posities staan tijdelijk op €0 — "
-            f"controleer de ticker of probeer Refresh."
+            f"No price found for: {', '.join(_zero_price_tickers)}. These positions count as €0 "
+            f"until a price is found. Check the ticker (use the Yahoo Finance symbol, e.g. "
+            f"QDVE.DE) or try Refresh prices.",
+            icon=":material/warning:",
         )
     return portfolio_df, realized, unrealized_total, total_profit, profit_percentage
 

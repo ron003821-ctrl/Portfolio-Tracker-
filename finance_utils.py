@@ -4,11 +4,14 @@
 - plan_deposit / deposit_needed_without_selling   rebalancing with new money only
 - box3_base / next_peildatum / thresholds_for     1 January check (toeslagen, Box 3)
 - change_from_closes / daily_moves                daily recap: price move since the previous close
+- normalize_ticker                               one canonical ticker per asset (aliases, exchange codes)
 """
 from __future__ import annotations
 
 from datetime import date
 from typing import Iterable
+
+import re
 
 import pandas as pd
 
@@ -301,3 +304,48 @@ def daily_moves(holdings: pd.DataFrame,
                   .sort_values('_size', ascending=False, na_position='last')
                   .drop(columns='_size').reset_index(drop=True))
     return table, total_move, total_change
+
+
+# ─────────────────────────────────────────────────────────────
+# Ticker normalisation (shared by the app and snapshot.py)
+# ─────────────────────────────────────────────────────────────
+
+# Exchange codes as brokers write them (DEGIRO codes and official MIC codes)
+# → the suffix Yahoo Finance uses for a listing of the same security.
+# Tradegate (XGAT/TDG) has no Yahoo prices; the same EUR listing on Xetra (.DE) does.
+_EXCHANGE_SUFFIX = {
+    'XGAT': '.DE', 'TDG': '.DE', 'TGAT': '.DE',
+    'XETR': '.DE', 'XETRA': '.DE', 'XET': '.DE', 'ETR': '.DE', 'GER': '.DE',
+    'XFRA': '.F', 'FRA': '.F',
+    'XAMS': '.AS', 'EAM': '.AS', 'AEX': '.AS',
+    'XPAR': '.PA', 'EPA': '.PA',
+    'XMIL': '.MI', 'MIL': '.MI',
+    'XMAD': '.MC', 'MAD': '.MC', 'BME': '.MC',
+    'XBRU': '.BR', 'EBR': '.BR',
+    'XSWX': '.SW', 'SWX': '.SW', 'EBS': '.SW', 'VTX': '.SW',
+    'XLON': '.L', 'LSE': '.L',
+    'XNAS': '', 'NDQ': '', 'NASDAQ': '', 'XNYS': '', 'NSY': '', 'NYSE': '', 'US': '',
+}
+
+# Bare tickers that are known to mean one specific listing.
+_TICKER_ALIASES = {
+    'VUSA': 'VUSA.AS',
+    'VWRL': 'VWRL.AS',
+    'QDVE': 'QDVE.DE',
+}
+
+
+def normalize_ticker(ticker) -> str:
+    """One canonical form per asset: uppercase, trimmed, exchange codes and aliases mapped.
+
+    'Vusa', 'VUSA' and 'VUSA.AS' become 'VUSA.AS'; 'QDVE.XGAT' (DEGIRO, Tradegate)
+    becomes 'QDVE.DE', so it counts as the same position and can be priced.
+    Also accepts a space or colon before the exchange code ('QDVE XGAT', 'QDVE:XGAT').
+    """
+    t = str(ticker).strip().upper()
+    t = re.sub(r'\s*[:\s]\s*', '.', t)
+    if '.' in t:
+        base, code = t.rsplit('.', 1)
+        if base and code in _EXCHANGE_SUFFIX:
+            t = base + _EXCHANGE_SUFFIX[code]
+    return _TICKER_ALIASES.get(t, t)

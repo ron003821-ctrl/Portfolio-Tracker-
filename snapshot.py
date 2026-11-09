@@ -17,6 +17,8 @@ import requests
 import yfinance as yf
 from supabase import create_client
 
+from finance_utils import normalize_ticker
+
 _url = (os.environ.get("SUPABASE_URL") or "").strip().rstrip("/")
 _key = (os.environ.get("SUPABASE_KEY") or "").strip()
 
@@ -164,10 +166,8 @@ def main():
 
     aggregated = {}
     dividends = 0.0
-    _ALIASES = {'VUSA': 'VUSA.AS', 'VWRL': 'VWRL.AS', 'QDVE': 'QDVE.DE'}
     for row in trans:
-        ticker = str(row['ticker']).strip().upper()
-        ticker = _ALIASES.get(ticker, ticker)
+        ticker = normalize_ticker(row['ticker'])
         agg = aggregated.setdefault(ticker, {'q': 0.0, 'c': 0.0})
         qty = float(row.get('quantity') or 0)
         price = float(row.get('purchase_price') or 0)
